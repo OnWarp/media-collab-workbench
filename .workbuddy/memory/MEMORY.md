@@ -8,8 +8,8 @@
 
 ## 部署
 - 手动：`npx wrangler deploy --config wrangler.jsonc`（先 `wrangler r2 bucket create media-collab-uploads`、`wrangler d1 create media-collab-db`、`wrangler d1 execute media-collab-db --remote --file=./migrations/0001_init.sql`、`wrangler secret put BOOTSTRAP_TOKEN`）。
-- CI：`.github/workflows/deploy-worker.yml`，推送 `main` 自动部署。流程含：创建 R2、创建/复用 D1 并自动写入 `database_id`、执行 `0001_init.sql` 迁移、注入 `BOOTSTRAP_TOKEN`、部署。必需仓库 Secrets：`CLOUDFLARE_API_TOKEN`(需 Workers+D1+R2 权限)、`CLOUDFLARE_ACCOUNT_ID`；`BOOTSTRAP_TOKEN` 选填。
-- 首次部署后：空库用 `BOOTSTRAP_TOKEN` 调 `/api/bootstrap` 建管理员；若已迁移历史数据则无需引导。
+- CI：`.github/workflows/deploy-worker.yml`，推送 `main` 自动部署。流程含：创建 R2、准备 D1（机密变量 `D1_DATABASE_ID` 可选覆盖，否则自动创建并注入 `database_id`）、执行 `0001_init.sql` 迁移、注入 `BOOTSTRAP_TOKEN`、部署并捕获 Worker URL、若配置了 `ADMIN_USERNAME`+`ADMIN_PASSWORD` 则自动 `/api/bootstrap` 建管理员。必需仓库 Secrets：`CLOUDFLARE_API_TOKEN`(需 Workers+D1+R2 权限)、`CLOUDFLARE_ACCOUNT_ID`；可选：`BOOTSTRAP_TOKEN`、`D1_DATABASE_ID`、`ADMIN_USERNAME`、`ADMIN_PASSWORD`。
+- 首次部署后：若已配 `ADMIN_USERNAME`/`ADMIN_PASSWORD` 则自动建管理员（仅空库生效）；否则手动用 `BOOTSTRAP_TOKEN` 调 `/api/bootstrap`；若已迁移历史数据则无需引导。
 
 ## 约定 / 坑
 - `data/`、`public/uploads/`、`.env`、`.dev.vars`、`.wrangler/`、`node_modules/`、`media-collab-workbench/`（历史冗余嵌套副本）、`migrations/_migrated_seed.sql`（含临时密码哈希）均被 `.gitignore` 排除，切勿提交。

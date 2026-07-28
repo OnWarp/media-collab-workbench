@@ -140,10 +140,11 @@ curl -X POST https://media-collab-workbench.<子域>.workers.dev/api/bootstrap \
 
 1. `node --check worker.js` 语法校验（复制成 `.mjs` 以兼容 CommonJS 仓库）
 2. 创建 R2 桶 `media-collab-uploads`（已存在则忽略）
-3. 创建/复用 D1 数据库 `media-collab-db`，并按名称取回 `database_id` 写回本次流水线的 `wrangler.jsonc`
+3. 准备 D1 数据库 `media-collab-db`：若配置了机密变量 `D1_DATABASE_ID` 则直接用它，否则自动创建并按名称取回 `database_id` 写回本次流水线的 `wrangler.jsonc`
 4. 执行 D1 表结构迁移 `migrations/0001_init.sql`
 5. 写入运行密钥 `BOOTSTRAP_TOKEN`（仓库里配了该 Secret 才执行）
-6. `wrangler deploy --config wrangler.jsonc` 正式部署
+6. `wrangler deploy --config wrangler.jsonc` 正式部署，并捕获 Worker URL
+7. 若配置了 `ADMIN_USERNAME` + `ADMIN_PASSWORD`，自动调用 `/api/bootstrap` 创建管理员（仅空库生效）
 
 ### 8.1 需要的仓库密钥
 
@@ -154,6 +155,9 @@ curl -X POST https://media-collab-workbench.<子域>.workers.dev/api/bootstrap \
 | `CLOUDFLARE_API_TOKEN` | Cloudflare API Token，需授予 **Workers Scripts 编辑** + **D1 编辑** + **R2 编辑** 权限 | 是 |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账户 ID | 是 |
 | `BOOTSTRAP_TOKEN` | Worker 运行时密钥，用于 `/api/bootstrap` 创建首个管理员；不配则跳过（部署仍可进行，但需自行用 `wrangler secret put` 设置后才能引导） | 建议 |
+| `D1_DATABASE_ID` | 可选。提供则直接使用该 D1 uuid，跳过自动创建 `media-collab-db`；不提供则 CI 自动创建 | 否 |
+| `ADMIN_USERNAME` | 可选。与 `ADMIN_PASSWORD` 同时配置后，部署完成自动调用 `/api/bootstrap` 创建管理员（仅空库生效，用完即失效） | 否 |
+| `ADMIN_PASSWORD` | 可选。初始管理员密码，至少 10 位 | 否 |
 
 > 三者都通过 GitHub Encrypted Secrets 注入，**不会**写入仓库或出现在 Actions 日志明文里。
 
@@ -162,7 +166,10 @@ curl -X POST https://media-collab-workbench.<子域>.workers.dev/api/bootstrap \
 1. 把本仓库推到 GitHub（确保 `.github/workflows/deploy-worker.yml` 在 `main` 分支）。
 2. 在仓库 Settings 添加上述三个 Secrets。
 3. 之后任何推送到 `main` 的提交都会自动部署；也可在 **Actions → Deploy Cloudflare Worker → Run workflow** 手动触发（`workflow_dispatch`）。
-4. 首次部署完成后，用 `BOOTSTRAP_TOKEN` 的值对生产域名调一次 `/api/bootstrap` 创建管理员（见 7.1）。若改用迁移脚本灌入了历史数据，则无需再引导。
+4. 首次部署完成后：
+   - 若已配置 `ADMIN_USERNAME` + `ADMIN_PASSWORD`，流水线会**自动**调用 `/api/bootstrap` 创建管理员（仅空库生效，成功后即失效），无需手动操作；
+   - 否则用 `BOOTSTRAP_TOKEN` 的值对生产域名手动调一次 `/api/bootstrap` 创建管理员（见 7.1）。
+   若改用迁移脚本灌入了历史数据（见第九节），则库非空，引导不会执行，也无需再引导。
 
 ### 8.3 注意事项
 

@@ -130,7 +130,7 @@ npx wrangler dev
 npx wrangler deploy
 ```
 
-推送到 `main` 分支会触发 GitHub Actions 自动部署（流水线会自动创建 R2、创建/复用 D1、执行表结构迁移并写入 `BOOTSTRAP_TOKEN`）。需要在仓库 Settings > Secrets 添加 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`，建议再添加 `BOOTSTRAP_TOKEN`。
+推送到 `main` 分支会触发 GitHub Actions 自动部署（流水线会自动创建 R2、创建/复用 D1、执行表结构迁移、写入 `BOOTSTRAP_TOKEN`；若配置了 `ADMIN_USERNAME` + `ADMIN_PASSWORD` 还会在部署后自动创建管理员账号）。需要在仓库 Settings > Secrets 添加 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`，建议再添加 `BOOTSTRAP_TOKEN`、以及可选的 `D1_DATABASE_ID`、`ADMIN_USERNAME`、`ADMIN_PASSWORD`。
 
 如有本地 `server.js` 的历史数据需要保留，参见 [WORKERS_DEPLOY.md](./WORKERS_DEPLOY.md) 的「已有本地数据迁移」章节，用 `node scripts/migrate-to-d1.mjs` 灌入 D1。
 

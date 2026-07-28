@@ -14,11 +14,17 @@ concurrency:
 permissions:
   contents: read
 
-# 注入 Cloudflare 凭据；BOOTSTRAP_TOKEN 缺省为空时，写入密钥的那一步会自动跳过。
+# 注入 Cloudflare 凭据与可选覆盖项；以下任一缺省为空时，对应步骤会自动跳过或回退到自动创建。
+# - BOOTSTRAP_TOKEN：引导管理员用的口令
+# - D1_DATABASE_ID：可选，提供则直接使用该 D1 uuid，跳过自动创建
+# - ADMIN_USERNAME / ADMIN_PASSWORD：可选，同时配置后部署完成自动创建管理员
 env:
   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
   CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
   BOOTSTRAP_TOKEN: ${{ secrets.BOOTSTRAP_TOKEN }}
+  D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+  ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
+  ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
 
 jobs:
   deploy:
@@ -46,12 +52,17 @@ jobs:
       - name: 创建 R2 存储桶（已存在则忽略）
         run: npx wrangler r2 bucket create media-collab-uploads --config wrangler.jsonc || true
 
-      - name: 创建 D1 数据库并写入 database_id
+      - name: 准备 D1 数据库（优先用机密变量 D1_DATABASE_ID，否则自动创建）
         run: |
-          # 幂等创建：已存在则忽略报错（不传 --config，避免占位符 __D1_DATABASE_ID__ 触发校验失败）
-          npx wrangler d1 create media-collab-db || true
-          # 无论新建还是已存在，都按名称取回 uuid
-          DB_ID=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="media-collab-db") | .uuid')
+          if [ -n "$D1_DATABASE_ID" ]; then
+            echo "使用机密变量中的 D1_DATABASE_ID=$D1_DATABASE_ID"
+            DB_ID="$D1_DATABASE_ID"
+          else
+            # 幂等创建：已存在则忽略报错（不传 --config，避免占位符 __D1_DATABASE_ID__ 触发校验失败）
+            npx wrangler d1 create media-collab-db || true
+            # 无论新建还是已存在，都按名称取回 uuid
+            DB_ID=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="media-collab-db") | .uuid')
+          fi
           echo "D1 uuid = $DB_ID"
           if [ -z "$DB_ID" ]; then echo "未能获取 D1 database_id"; exit 1; fi
           # 把 wrangler.jsonc 里的占位符替换成真实 id（仅修改本次流水线的临时文件，不影响仓库）
@@ -65,4 +76,22 @@ jobs:
         run: echo "$BOOTSTRAP_TOKEN" | npx wrangler secret put BOOTSTRAP_TOKEN --config wrangler.jsonc
 
       - name: 部署到 Cloudflare Workers
-        run: npx wrangler deploy --config wrangler.jsonc
+        run: |
+          # 捕获部署输出的 Worker URL，供后续自动引导管理员使用
+          OUT=$(npx wrangler deploy --config wrangler.jsonc 2>&1)
+          echo "$OUT"
+          echo "WORKER_URL=$(echo "$OUT" | grep -oE 'https://[a-zA-Z0-9._-]+\.workers\.dev' | head -n1)" >> "$GITHUB_ENV"
+
+      - name: 自动创建管理员账号（使用机密变量 ADMIN_USERNAME / ADMIN_PASSWORD）
+        if: ${{ env.ADMIN_USERNAME != '' && env.ADMIN_PASSWORD != '' }}
+        run: |
+          if [ -z "$WORKER_URL" ]; then echo "未获取到 Worker URL，跳过引导"; exit 0; fi
+          if [ ${#ADMIN_PASSWORD} -lt 10 ]; then echo "ADMIN_PASSWORD 至少 10 位，跳过引导"; exit 0; fi
+          # 用 jq 构造 JSON，避免密码含特殊字符破坏请求体
+          DATA=$(jq -n --arg u "$ADMIN_USERNAME" --arg p "$ADMIN_PASSWORD" '{username:$u,displayName:"管理员",password:$p}')
+          curl -fsS -X POST "$WORKER_URL/api/bootstrap" \
+            -H "content-type: application/json" \
+            -H "x-bootstrap-token: $BOOTSTRAP_TOKEN" \
+            -d "$DATA" \
+            && echo "管理员账号已自动创建" \
+            || echo "引导未执行（可能已有用户 / 网络问题），可忽略"

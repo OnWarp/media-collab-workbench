@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>自媒体内容协作工作台</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- 登录页 -->
+  <div id="login-screen" class="login-screen">
+    <div class="login-card">
+      <div class="brand">
+        <div class="logo">媒</div>
+        <h1>自媒体内容协作工作台</h1>
+        <p>选题进度跟踪 · 作品验收结算一体化后台</p>
+      </div>
+      <div class="tabs">
+        <button class="tab active" data-tab="login">登录</button>
+        <button class="tab" data-tab="register">注册成员</button>
+      </div>
+      <form id="login-form" class="form">
+        <input id="login-username" placeholder="用户名" autocomplete="username" />
+        <input id="login-password" type="password" placeholder="密码" autocomplete="current-password" />
+        <button type="submit" class="btn primary block">登 录</button>
+      </form>
+      <form id="register-form" class="form hidden">
+        <input id="reg-username" placeholder="用户名" />
+        <input id="reg-display" placeholder="昵称（可选）" />
+        <input id="reg-password" type="password" placeholder="设置密码" />
+        <button type="submit" class="btn primary block">注 册</button>
+        <div class="hint">注册后身份为「普通成员」，可发布/认领选题、提交作品</div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 主应用 -->
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <div class="side-brand">媒 协作台</div>
+      <nav id="nav"></nav>
+      <div class="side-user">
+        <div class="avatar" id="side-avatar">?</div>
+        <div class="side-user-info">
+          <div id="side-name">—</div>
+          <div id="side-role" class="role-badge">—</div>
+        </div>
+      </div>
+      <button id="logout-btn" class="btn ghost block">退出登录</button>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div id="page-title">公告看板</div>
+        <div class="topbar-right">
+          <button id="tutorial-btn" class="icon-btn" title="使用教程">📘</button>
+          <button id="msg-btn" class="icon-btn" title="消息提醒">🔔<span id="msg-badge" class="badge hidden">0</span></button>
+        </div>
+      </header>
+      <section id="view" class="view"></section>
+    </main>
+  </div>
+
+  <!-- 弹窗 -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-box" id="modal-box"></div>
+  </div>
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

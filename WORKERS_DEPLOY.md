@@ -26,4 +26,4 @@
 
 `worker.js` 应把 `/api/*` 请求转给 `APP_STATE` Durable Object；Object 在单一实例中读写状态，上传接口把 `request.body` 流式写入 `UPLOADS`，下载则从 R2 返回对象。所有写操作应使用 Durable Object SQLite 事务；不要将整个数据库缓存进 Worker 全局变量。
 
-现有 Node 后端已做以下安全加固：禁用默认账号、scrypt 密码哈希、7 天会话过期/登出、只允许 HTTP(S) 外链、回收站权限检查。迁移 Worker 路由时必须保留这些规则。
+现有 Node 后端已做以下安全加固：禁用默认账号、scrypt 密码哈希、7 天会话过期/登出、只允许 HTTP(S) 外链、回收站权限检查。迁移 Worker 路由时必须保留这些规则

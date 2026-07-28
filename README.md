@@ -6,9 +6,9 @@
 
 这是一个面向小型自媒体团队的**内容协作管理平台**，覆盖从选题发布、认领接单、文案/视频制作、审核验收、流量回收到结算付款的全流程。支持本地零依赖部署（开箱即跑）和 Cloudflare Workers 云端部署两种模式。
 
-- **技术栈**: 纯 Node.js 内置模块（零依赖） / Cloudflare Workers + Durable Object + R2
+- **技术栈**: 纯 Node.js 内置模块（零依赖） / Cloudflare Workers + D1 + R2
 - **前端**: 原生 HTML + CSS + JavaScript（苹果风设计系统，无构建步骤）
-- **存储**: JSON 文件（本地）/ Durable Object SQLite（云端） + R2（文件上传）
+- **存储**: JSON 文件（本地）/ Cloudflare D1（云端关系型 SQLite，持久化业务数据） + R2（文件上传）
 
 ## 核心功能
 
@@ -49,7 +49,7 @@
 ```
 media-collab-workbench/
 ├── server.js               # 本地后端服务（零依赖，1123 行）
-├── worker.js               # Cloudflare Workers 后端（Durable Object 模式）
+├── worker.js               # Cloudflare Workers 后端（D1 模式）
 ├── public/                  # 前端静态资源（无构建）
 │   ├── index.html          # 入口页面
 │   ├── app.js              # 前端逻辑（1227 行）
@@ -57,8 +57,10 @@ media-collab-workbench/
 ├── package.json             # 项目元信息
 ├── start.bat                # Windows 一键启动
 ├── start.sh                 # macOS/Linux 一键启动
-├── wrangler.jsonc           # Cloudflare Workers 配置（正式）
+├── wrangler.jsonc           # Cloudflare Workers 配置（正式，含 D1/R2 绑定）
 ├── wrangler.jsonc.example   # Cloudflare Workers 配置模板
+├── migrations/              # D1 数据库表结构与时序迁移（0001_init.sql）
+├── scripts/                 # 运维脚本（如 migrate-to-d1.mjs 本地数据迁移）
 ├── 部署说明.txt              # 本地部署说明
 ├── WORKERS_DEPLOY.md        # Workers 部署说明
 ├── .github/workflows/
@@ -105,7 +107,7 @@ BOOTSTRAP_ADMIN_USERNAME=myadmin BOOTSTRAP_ADMIN_PASSWORD=your_strong_password n
 
 ### 模式 B: Cloudflare Workers 部署
 
-架构: Workers Static Assets 托管 `public/` + Durable Object (`AppState`) 串行化处理业务状态 + R2 存储上传文件。
+架构: Workers Static Assets 托管 `public/` + D1 数据库（`media-collab-db`，关系型 SQLite，持久化全部业务数据）+ R2 存储上传文件。D1 通过 `wrangler.jsonc` 的 `d1_databases` 绑定注入，无需自建数据库连接串，也不依赖 Durable Object。
 
 ```bash
 # 1. 安装 wrangler
@@ -114,10 +116,11 @@ npm install -D wrangler
 # 2. 创建 R2 bucket
 npx wrangler r2 bucket create media-collab-uploads
 
-# 3. 配置 wrangler.jsonc（从 wrangler.jsonc.example 复制）
-cp wrangler.jsonc.example wrangler.jsonc
+# 3. 创建 D1 数据库并执行表结构迁移
+npx wrangler d1 create media-collab-db
+npx wrangler d1 execute media-collab-db --remote --file=./migrations/0001_init.sql
 
-# 4. 设置 secret
+# 4. 设置 secret（首次创建管理员用）
 npx wrangler secret put BOOTSTRAP_TOKEN
 
 # 5. 本地测试
@@ -127,24 +130,28 @@ npx wrangler dev
 npx wrangler deploy
 ```
 
-推送到 `main` 分支会触发 GitHub Actions 自动部署。需要在仓库 Settings > Secrets 添加 `CLOUDFLARE_API_TOKEN` 和 `CLOUDFLARE_ACCOUNT_ID`。
+推送到 `main` 分支会触发 GitHub Actions 自动部署（流水线会自动创建 R2、创建/复用 D1、执行表结构迁移并写入 `BOOTSTRAP_TOKEN`）。需要在仓库 Settings > Secrets 添加 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`，建议再添加 `BOOTSTRAP_TOKEN`。
+
+如有本地 `server.js` 的历史数据需要保留，参见 [WORKERS_DEPLOY.md](./WORKERS_DEPLOY.md) 的「已有本地数据迁移」章节，用 `node scripts/migrate-to-d1.mjs` 灌入 D1。
 
 详见 [WORKERS_DEPLOY.md](./WORKERS_DEPLOY.md)。
 
 ## 数据模型
 
-| 集合 | 说明 |
+云端（Cloudflare Workers）使用 D1 关系表，本地（Node `server.js`）使用 `data/db.json`。两端字段一一对应：
+
+| D1 表 / JSON 键 | 说明 |
 |------|------|
 | `users` | 用户（username, displayName, salt, passwordHash, role, maxClaims, showTutorial） |
 | `topics` | 选题（标题/简介/参考链接/文案/系列/工作类型/状态/阶段/认领人/截止时间/结算/流量/回收站） |
 | `comments` | 选题评论 |
 | `materials` | 选题素材版本 |
-| `messages` | 站内消息（含 target 跳转） |
-| `messageRecycle` | 消息回收站 |
-| `logs` | 操作日志 |
+| `messages` | 站内消息（含 read/deleted 软删除标记，回收站由 deleted=1 表示） |
 | `sessions` | 会话 token（7 天过期） |
-| `weeklySettlements` | 周结算记录 |
-| `announcements` | 公告栏（notice + referenceVideos） |
+| `weeklySettlements` | 周结算记录（topicIds 以 JSON 存储） |
+| `announcements` | 公告栏（notice + referenceVideos，单例 id=1） |
+
+> 云端版已移除独立的 `logs`（操作日志）集合与 `messageRecycle` 集合：`logs` 不再返回，`messageRecycle` 并入 `messages` 的软删除机制。JSON 数组/对象字段（referenceLinks、mediaLinks、series、favoritedBy、rejectedNotes、traffic、topicIds、referenceVideos 等）在 D1 中以 TEXT 存储，读写时做 JSON 序列化/反序列化。
 
 ## 安全设计
 

@@ -18,6 +18,9 @@ server.log
 # ===== wrangler 本地缓存 =====
 .wrangler/
 
+# ===== 迁移脚本生成的带密码哈希的 SQL（切勿提交） =====
+migrations/_migrated_seed.sql
+
 # ===== 历史上传产生的冗余嵌套副本（与仓库同名，已在根目录维护正式版本） =====
 media-collab-workbench/
 

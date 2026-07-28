@@ -46,6 +46,20 @@ jobs:
       - name: 创建 R2 存储桶（已存在则忽略）
         run: npx wrangler r2 bucket create media-collab-uploads --config wrangler.jsonc || true
 
+      - name: 创建 D1 数据库并写入 database_id
+        run: |
+          # 幂等创建：已存在则忽略报错（不传 --config，避免占位符 __D1_DATABASE_ID__ 触发校验失败）
+          npx wrangler d1 create media-collab-db || true
+          # 无论新建还是已存在，都按名称取回 uuid
+          DB_ID=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="media-collab-db") | .uuid')
+          echo "D1 uuid = $DB_ID"
+          if [ -z "$DB_ID" ]; then echo "未能获取 D1 database_id"; exit 1; fi
+          # 把 wrangler.jsonc 里的占位符替换成真实 id（仅修改本次流水线的临时文件，不影响仓库）
+          jq --arg id "$DB_ID" '.d1_databases[0].database_id = $id' wrangler.jsonc > wrangler.jsonc.tmp && mv wrangler.jsonc.tmp wrangler.jsonc
+
+      - name: 执行 D1 表结构迁移
+        run: npx wrangler d1 execute media-collab-db --remote --file=./migrations/0001_init.sql --config wrangler.jsonc
+
       - name: 写入 BOOTSTRAP_TOKEN 密钥（仅当仓库配置了该 Secret 时执行）
         if: ${{ env.BOOTSTRAP_TOKEN != '' }}
         run: echo "$BOOTSTRAP_TOKEN" | npx wrangler secret put BOOTSTRAP_TOKEN --config wrangler.jsonc

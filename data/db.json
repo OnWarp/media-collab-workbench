@@ -1,0 +1,42 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "username": "admin",
+      "displayName": "超级管理员",
+      "salt": "0dc3ae60fcb310d189c9f91d2f5e448a",
+      "passwordHash": "e9961b7740cc705b00c6aaeec90efdea23fec0081ed1cfb25a631c32bf5a467b6b477390d93a246d3f6869d9125e0d66cc9636d53ae3a8fea79207435593e86b",
+      "passwordHashAlgo": "scrypt",
+      "role": "admin",
+      "maxClaims": 999,
+      "showTutorial": true,
+      "createdAt": 1785250385227
+    },
+    {
+      "id": 2,
+      "username": "xiaoming",
+      "displayName": "小明(成员)",
+      "salt": "477ef3f8f4d9a8747d7c82e4b00adcdf",
+      "passwordHash": "210ced18e607038ef3196108f675d1323b95cbdf902d979990a3ae4cdcc23ac1ee178b9a9f7460597265ab2b2b19d6b36924092d7677831dcea95eb2c8d9a298",
+      "passwordHashAlgo": "scrypt",
+      "role": "member",
+      "maxClaims": 5,
+      "showTutorial": true,
+      "createdAt": 1785250385414
+    }
+  ],
+  "topics": [],
+  "comments": [],
+  "materials": [],
+  "messages": [],
+  "logs": [],
+  "sessions": {
+    "de82a0f20d3fbbe66feec0621e386ce55f51353bff7fb3301adda5b7362927cc": {
+      "userId": 1,
+      "expiresAt": 1785855208236
+    }
+  },
+  "weeklySettlements": [],
+  "announcements": [],
+  "messageRecycle": []
+}

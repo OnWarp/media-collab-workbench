@@ -1,65 +1,214 @@
-自媒体协作工作台 —— 部署说明
-================================
+# 自媒体内容协作工作台
 
-一、环境要求
-  - 安装 Node.js 16 及以上版本（推荐 18+）
-    下载：https://nodejs.org （选 LTS 版本）
-  - 验证：终端执行  node -v  能看到版本号即可
+> 选题进度跟踪 + 作品验收结算一体化后台，适用于小型自媒体团队协作
 
-二、启动方式（任选其一）
-  方式 A（最简单）：
-    1. 把整个 media-collab-workbench 文件夹拷到目标机器
-    2. 双击 start.bat（Windows）或在文件夹内执行 ./start.sh（macOS/Linux）
-    3. 看到“已启动”提示后，浏览器打开 http://localhost:3000
-  方式 B（通用）：
-    终端进入该文件夹，执行：
-      node server.js
-    或：
-      npm start
+## 项目简介
 
-  注意：本项目纯 Node.js 内置模块，无需 npm install 安装任何依赖。
+这是一个面向小型自媒体团队的**内容协作管理平台**，覆盖从选题发布、认领接单、文案/视频制作、审核验收、流量回收到结算付款的全流程。支持本地零依赖部署（开箱即跑）和 Cloudflare Workers 云端部署两种模式。
 
-三、访问地址
-  - 本机：      http://localhost:3000
-  - 同局域网手机/其他电脑：把 localhost 换成运行电脑的局域网 IP
-                  例：http://192.168.1.9:3000
-                  （Windows 用 ipconfig，macOS/Linux 用 ifconfig 查 IP）
-  - 更换端口：启动时指定环境变量，例如
-      PORT=8080 node server.js   （然后访问 http://localhost:8080）
+- **技术栈**: 纯 Node.js 内置模块（零依赖） / Cloudflare Workers + Durable Object + R2
+- **前端**: 原生 HTML + CSS + JavaScript（苹果风设计系统，无构建步骤）
+- **存储**: JSON 文件（本地）/ Durable Object SQLite（云端） + R2（文件上传）
 
-四、默认账号（首次启动自动创建）
-  管理员： admin    / admin123
-  成员：   xiaoming / member123
-  ⚠ 安全提醒：上线前请在「成员管理」里修改默认密码，或让成员自行注册。
+## 核心功能
 
-五、数据说明
-  - 所有数据存于 data/db.json（首次启动自动生成）
-  - 上传的图片/视频存于 public/uploads/（首次启动自动生成，请勿删除）
-  - 备份时只需复制 data/ 与 public/uploads/ 两个目录
-  - 如需完全清空重置：删除 data/ 与 public/uploads/ 后重启即可
+| 模块 | 说明 |
+|------|------|
+| 公告看板 | 公告文字 + 参考视频栏（管理员维护），用户接单进度看板 |
+| 选题接单 | 发布选题（标题/简介/参考链接/文案/系列标签/截止时间）、认领、收藏、系列筛选 |
+| 我的工作台 | 我认领的 / 我发布的 / 进行中 / 我的结算（多标签页） |
+| 审核结算 | 管理员统一审核（文案/视频）、录入金额、确认结款、周结算批量处理、CSV 账单导出 |
+| 视频流量 | 抖音/快手/小红书三平台多天数据填报，SVG 折线图对比，7 天填报期限 |
+| 消息提醒 | 站内消息（认领/提交/审核/驳回/结算/评论/超时/弃单），已读 1 小时自动清理，消息回收站 7 天恢复 |
+| 数据统计 | 个人数据（认领/完结/结算/稿酬）+ 团队总览（成员接单完工榜） |
+| 回收站 | 废弃/删除选题进入回收站，30 天自动清除（可自定义保留天数） |
+| 成员管理 | 管理员新建成员、设置接单上限 |
+| 使用教程 | 新用户首次进入分步教程引导 |
 
-六、后台常驻（让服务一直开着）
-  Linux / macOS：
-    nohup node server.js > server.log 2>&1 &
-  或安装进程守护（推荐）：
-    npm install -g pm2
-    pm2 start server.js --name media-workbench
+## 工作流程
 
-七、目录结构
-  media-collab-workbench/
-  ├── server.js          # 后端服务（零依赖，开箱即跑）
-  ├── package.json
-  ├── public/            # 前端页面（无需构建）
-  │   ├── index.html
-  │   ├── app.js
-  │   └── styles.css
-  ├── start.sh           # macOS/Linux 一键启动
-  ├── start.bat          # Windows 一键启动
-  └── .gitignore
+```
+发布选题（pending） → 认领（in_progress） → 确认选题 → 文案制作 → 提交文案审核
+                                                              ↓
+                                                  [仅文案] 审核通过 → 完结
+                                                  [全流程] 文案通过 → 视频制作 → 提交视频审核
+                                                                                    ↓
+                                                                        审核通过 → 完结 → 7天内填报流量 → 结算
+```
 
-八、功能速览
-  - 公告看板 / 选题接单 / 我的工作台
-  - 管理员审核（看文案+视频）、审核页内直接结算
-  - 视频流量（抖音/快手/小红书三平台）
-  - 消息提醒（红点、已读1小时自动清理、消息回收站）
-  - 数据统计、回收站、成员管理
+**接单类型与定价**:
+- 全流程（文案+视频）: ¥40
+- 仅文案: ¥15
+
+**角色权限**:
+- **管理员(admin)**: 全部功能（审核、结算、周结算、成员管理、统计、永久删除、公告编辑）
+- **成员(member)**: 发布/认领选题、提交作品、填报流量、查看个人数据、评论沟通
+
+## 项目结构
+
+```
+media-collab-workbench/
+├── server.js               # 本地后端服务（零依赖，1123 行）
+├── worker.js               # Cloudflare Workers 后端（Durable Object 模式）
+├── public/                  # 前端静态资源（无构建）
+│   ├── index.html          # 入口页面
+│   ├── app.js              # 前端逻辑（1227 行）
+│   └── styles.css          # 苹果风样式（319 行）
+├── package.json             # 项目元信息
+├── start.bat                # Windows 一键启动
+├── start.sh                 # macOS/Linux 一键启动
+├── wrangler.jsonc           # Cloudflare Workers 配置（正式）
+├── wrangler.jsonc.example   # Cloudflare Workers 配置模板
+├── 部署说明.txt              # 本地部署说明
+├── WORKERS_DEPLOY.md        # Workers 部署说明
+├── .github/workflows/
+│   └── deploy-worker.yml    # GitHub Actions 自动部署
+└── .gitignore
+```
+
+运行时自动生成:
+- `data/db.json` — 全部业务数据（用户/选题/评论/素材/消息/日志/会话/结算记录/公告/消息回收站）
+- `public/uploads/` — 图片和视频文件
+
+## 两种部署模式
+
+### 模式 A: 本地部署（零依赖）
+
+**环境要求**: Node.js 16+（推荐 18+），无需 `npm install`
+
+```bash
+# 方式 1: 直接运行
+node server.js
+
+# 方式 2: npm 脚本
+npm start
+
+# 方式 3: 一键启动
+# Windows: 双击 start.bat
+# macOS/Linux: ./start.sh
+```
+
+访问 `http://localhost:3000`，局域网其他设备把 `localhost` 换成本机 IP。
+
+**默认账号**（需设置环境变量 `ALLOW_INSECURE_DEMO_ACCOUNTS=true` 才会创建）:
+- 管理员: `admin` / `admin123`
+- 成员: `xiaoming` / `member123`
+
+生产环境通过环境变量引导管理员:
+```bash
+BOOTSTRAP_ADMIN_USERNAME=myadmin BOOTSTRAP_ADMIN_PASSWORD=your_strong_password node server.js
+```
+
+**更换端口**: `PORT=8080 node server.js`
+
+**数据备份**: 复制 `data/` 和 `public/uploads/` 两个目录即可。
+
+### 模式 B: Cloudflare Workers 部署
+
+架构: Workers Static Assets 托管 `public/` + Durable Object (`AppState`) 串行化处理业务状态 + R2 存储上传文件。
+
+```bash
+# 1. 安装 wrangler
+npm install -D wrangler
+
+# 2. 创建 R2 bucket
+npx wrangler r2 bucket create media-collab-uploads
+
+# 3. 配置 wrangler.jsonc（从 wrangler.jsonc.example 复制）
+cp wrangler.jsonc.example wrangler.jsonc
+
+# 4. 设置 secret
+npx wrangler secret put BOOTSTRAP_TOKEN
+
+# 5. 本地测试
+npx wrangler dev
+
+# 6. 部署
+npx wrangler deploy
+```
+
+推送到 `main` 分支会触发 GitHub Actions 自动部署。需要在仓库 Settings > Secrets 添加 `CLOUDFLARE_API_TOKEN` 和 `CLOUDFLARE_ACCOUNT_ID`。
+
+详见 [WORKERS_DEPLOY.md](./WORKERS_DEPLOY.md)。
+
+## 数据模型
+
+| 集合 | 说明 |
+|------|------|
+| `users` | 用户（username, displayName, salt, passwordHash, role, maxClaims, showTutorial） |
+| `topics` | 选题（标题/简介/参考链接/文案/系列/工作类型/状态/阶段/认领人/截止时间/结算/流量/回收站） |
+| `comments` | 选题评论 |
+| `materials` | 选题素材版本 |
+| `messages` | 站内消息（含 target 跳转） |
+| `messageRecycle` | 消息回收站 |
+| `logs` | 操作日志 |
+| `sessions` | 会话 token（7 天过期） |
+| `weeklySettlements` | 周结算记录 |
+| `announcements` | 公告栏（notice + referenceVideos） |
+
+## 安全设计
+
+- **密码哈希**: 本地用 scrypt，Workers 用 PBKDF2（SHA-256, 21 万次迭代）
+- **会话管理**: 7 天过期，登出即清除
+- **默认账号**: 生产环境不自动创建，需通过环境变量引导
+- **外链校验**: 仅允许 HTTP/HTTPS 协议链接
+- **回收站权限**: 回收站选题按角色/发布者/认领人分级访问
+- **文件上传**: 图片 3MB 上限，视频 25MB 上限，扩展名白名单
+- **请求体限制**: 15MB JSON / 25MB multipart
+
+## API 接口概览
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/login` | 登录 |
+| POST | `/api/register` | 注册成员 |
+| POST | `/api/logout` | 登出 |
+| GET | `/api/me` | 当前用户信息 |
+| POST | `/api/me/tutorial` | 标记教程已看 |
+| GET/PUT | `/api/board` | 公告栏 |
+| GET/POST | `/api/users` | 用户列表/新建成员 |
+| PUT | `/api/users/:id` | 修改成员 |
+| GET/POST | `/api/topics` | 选题列表/发布选题 |
+| GET/PUT | `/api/topics/:id` | 选题详情/修改 |
+| POST | `/api/topics/:id/claim` | 认领 |
+| POST | `/api/topics/:id/abandon` | 弃单申请 |
+| POST | `/api/topics/:id/abandon/approve` | 弃单审批 |
+| POST | `/api/topics/:id/stage` | 阶段推进 |
+| POST | `/api/topics/:id/submit/copy` | 提交文案审核 |
+| POST | `/api/topics/:id/submit/video` | 提交视频审核 |
+| POST | `/api/topics/:id/review` | 管理员审核（通过/驳回） |
+| POST | `/api/topics/:id/deadline` | 设置截止时间 |
+| POST | `/api/topics/:id/favorite` | 收藏切换 |
+| POST | `/api/topics/:id/discard\|remove\|restore` | 废弃/删除/恢复 |
+| DELETE | `/api/topics/:id/purge` | 永久删除（管理员） |
+| POST | `/api/topics/:id/comment` | 评论 |
+| POST | `/api/topics/:id/material` | 素材上传 |
+| POST | `/api/topics/:id/traffic` | 流量填报 |
+| POST | `/api/topics/:id/settle` | 结算 |
+| POST | `/api/settle/week` | 周结算 |
+| GET | `/api/settle/weekly` | 周结算记录 |
+| GET | `/api/series` | 系列统计 |
+| GET | `/api/messages` | 消息列表 |
+| GET | `/api/messages/unread` | 未读数 |
+| POST | `/api/messages/read` | 标记已读 |
+| DELETE | `/api/messages/:id` | 删除消息 |
+| GET | `/api/messages/recycle` | 消息回收站 |
+| POST | `/api/messages/recycle/:id` | 恢复消息 |
+| GET | `/api/pending` | 待办计数 |
+| GET | `/api/stats/me` | 个人统计 |
+| GET | `/api/stats` | 团队统计（管理员） |
+| POST | `/api/upload` | 图片上传 |
+| POST | `/api/upload/video` | 视频上传 |
+| GET | `/api/export/bills` | 账单 CSV 导出 |
+
+## 自动化清理机制
+
+| 机制 | 周期 | 说明 |
+|------|------|------|
+| 回收站清除 | 每小时 | 超过保留天数（默认 30 天）的选题永久删除 |
+| 已读消息清理 | 每分钟 | 已读超过 1 小时的消息移入消息回收站 |
+| 消息回收站清除 | 每小时 | 超过 7 天的已删消息永久清除 |
+
+## License
+
+MIT

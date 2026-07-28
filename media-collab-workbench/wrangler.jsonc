@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "media-collab-workbench",
+  "main": "worker.js",
+  "compatibility_date": "2026-07-28",
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*", "/uploads/*"] },
+  "durable_objects": { "bindings": [{ "name": "APP_STATE", "class_name": "AppState" }] },
+  "r2_buckets": [{ "binding": "UPLOADS", "bucket_name": "media-collab-uploads" }],
+  "migrations": [{ "tag": "v1", "new_classes": ["AppState"] }],
+  "observability": { "enabled": true }
+}

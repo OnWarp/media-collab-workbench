@@ -37,7 +37,7 @@
 
 - `assets.directory: "./public"`，`run_worker_first: ["/api/*", "/uploads/*"]`
 - `durable_objects` 绑定 `APP_STATE` → 类 `AppState`
-- `migrations` 注册 `AppState` 类（首次部署必需）
+- `migrations` 用 `new_sqlite_classes` 注册 `AppState` 类（免费套餐必需；注意不是 `new_classes`）
 - `r2_buckets` 绑定 `UPLOADS` → bucket `media-collab-uploads`
 - `observability.enabled: true`
 
@@ -175,7 +175,8 @@ curl -X POST https://media-collab-workbench.<子域>.workers.dev/api/bootstrap \
 
 ## 九、常见问题
 
-- **部署报 `Class AppState is not defined` / Durable Object 相关错误**：检查 `wrangler.jsonc` 中 `migrations.new_classes` 是否包含 `AppState`，且 `main` 指向 `worker.js`。
+- **部署报 `In order to use Durable Objects with a free plan, you must create a namespace using a new_sqlite_classes migration`（code 10097）**：免费套餐的 Durable Object 必须是 SQLite 后端。把 `wrangler.jsonc` 的 `migrations` 改成 `"new_sqlite_classes": ["AppState"]`（不是 `new_classes`）。改完重新部署即可，`AppState` 用的 `state.storage` KV 接口在 SQLite 后端下仍兼容。
+- **部署报 `Class AppState is not defined`**：检查 `wrangler.jsonc` 中 `migrations` 是否包含 `AppState`（应为 `new_sqlite_classes`），且 `main` 指向 `worker.js`。
 - **`/api/*` 返回 404 或静态页**：确认 `assets.run_worker_first` 包含 `/api/*`；否则请求会被当成静态资源处理。
 - **上传图片/视频失败**：确认 R2 桶名与 `wrangler.jsonc` 中 `r2_buckets.bucket_name` 完全一致，且已 `wrangler secret put BOOTSTRAP_TOKEN`（上传接口会校验登录态）。
 - **引导接口返回 403**：`x-bootstrap-token` 与 `BOOTSTRAP_TOKEN` Secret 不一致，或系统里已存在用户（引导只能用于空库）。

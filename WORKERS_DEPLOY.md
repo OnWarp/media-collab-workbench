@@ -4,7 +4,7 @@
 
 架构分工：
 
-- **Static Assets**：托管 `public/` 下的前端静态资源（HTML/CSS/JS）
+- **Static Assets**：托管 `frontend/dist/`（React 19 + Vite + @cloudflare/kumo 构建产物，SPA 模式）
 - **D1 数据库（`media-collab-db`）**：关系型 SQLite，持久化全部业务数据（用户/选题/评论/素材/消息/结算/公告/会话）。通过 `wrangler.jsonc` 的 `d1_databases` 绑定以 `env.DB` 注入 worker。
 - **R2 Bucket（`UPLOADS`）**：保存上传的图片与视频文件
 - **Worker 路由**：`/api/*` 和 `/uploads/*` 走 `run_worker_first`，其余路径直接返回静态资源
@@ -35,7 +35,7 @@
 
 项目根目录的 **`wrangler.jsonc` 已经就绪**。它已包含：
 
-- `assets.directory: "./public"`，`run_worker_first: ["/api/*", "/uploads/*"]`
+- `assets.directory: "./frontend/dist"`，`run_worker_first: ["/api/*", "/uploads/*"]`，`not_found_handling: "single-page-application"`（本地手动部署前需先 `npm run build` 生成产物）
 - `d1_databases` 绑定 `DB` → 数据库 `media-collab-db`（`database_id` 由 CI 自动写入；本地手动部署需先用 `wrangler d1 create` 拿到的 uuid 填好）
 - `r2_buckets` 绑定 `UPLOADS` → bucket `media-collab-uploads`
 - `observability.enabled: true`
@@ -62,13 +62,13 @@ npx wrangler d1 create media-collab-db
 
 记下返回的 `database_id`（uuid），把它填进 `wrangler.jsonc` 的 `d1_databases[0].database_id`。
 
-然后执行表结构迁移（建表 + 公告单例种子）：
+然后执行数据库迁移（`migrations/` 下的 SQL 会按文件名顺序执行，并由远端 `d1_migrations` 表跟踪、每个文件只执行一次）：
 
 ```bash
-npx wrangler d1 execute media-collab-db --remote --file=./migrations/0001_init.sql
+npx wrangler d1 migrations apply media-collab-db --remote
 ```
 
-> GitHub Actions 会自动完成「创建/复用 D1 + 写入 database_id + 执行迁移」，本地手动部署才需要上面两步。
+> GitHub Actions 会自动完成「创建/复用 D1 + 写入 database_id + migrations apply」，本地手动部署才需要上面两步。
 
 ---
 
@@ -114,10 +114,11 @@ curl -X POST http://localhost:8787/api/bootstrap \
 ## 七、部署到生产
 
 ```bash
+npm run build          # 构建前端 → frontend/dist
 npx wrangler deploy
 ```
 
-该命令会：编译上传 `worker.js`、上传 `public/` 静态资源、绑定 D1 与 R2。部署完成后终端会给出生产域名（形如 `https://media-collab-workbench.<子域>.workers.dev`）。
+该命令会：编译上传 `worker.js`、上传 `frontend/dist/` 静态资源、绑定 D1 与 R2。部署完成后终端会给出生产域名（形如 `https://media-collab-workbench.<子域>.workers.dev`）。
 
 ### 7.1 在生产环境初始化管理员
 
@@ -139,12 +140,13 @@ curl -X POST https://media-collab-workbench.<子域>.workers.dev/api/bootstrap \
 推送（或合并）到 `main` 分支会自动触发 `.github/workflows/deploy-worker.yml`，无需手动登录服务器。该流水线一次完成：
 
 1. `node --check worker.js` 语法校验（复制成 `.mjs` 以兼容 CommonJS 仓库）
-2. 创建 R2 桶 `media-collab-uploads`（已存在则忽略）
-3. 准备 D1 数据库 `media-collab-db`：若配置了机密变量 `D1_DATABASE_ID` 则直接用它，否则自动创建并按名称取回 `database_id` 写回本次流水线的 `wrangler.jsonc`
-4. 执行 D1 表结构迁移 `migrations/0001_init.sql`
-5. 写入运行密钥 `BOOTSTRAP_TOKEN`（仓库里配了该 Secret 才执行）
-6. `wrangler deploy --config wrangler.jsonc` 正式部署，并捕获 Worker URL
-7. 若配置了 `ADMIN_USERNAME` + `ADMIN_PASSWORD`，自动调用 `/api/bootstrap` 创建管理员（仅空库生效）
+2. 安装并构建前端：`frontend/` 下 `npm ci && npm run build`（tsc 类型检查 + vite 构建 → `frontend/dist`），并校验产物存在
+3. 创建 R2 桶 `media-collab-uploads`（已存在则忽略）
+4. 准备 D1 数据库 `media-collab-db`：若配置了机密变量 `D1_DATABASE_ID` 则直接用它，否则自动创建并按名称取回 `database_id` 写回本次流水线的 `wrangler.jsonc`
+5. `wrangler d1 migrations apply --remote`：按文件名顺序执行 `migrations/` 下的全部迁移（`d1_migrations` 表跟踪，只执行未跑过的）
+6. 写入运行密钥 `BOOTSTRAP_TOKEN`（仓库里配了该 Secret 才执行）
+7. `wrangler deploy --config wrangler.jsonc` 正式部署，并捕获 Worker URL
+8. 若配置了 `ADMIN_USERNAME` + `ADMIN_PASSWORD`，自动调用 `/api/bootstrap` 创建管理员（仅空库生效）
 
 ### 8.1 需要的仓库密钥
 
@@ -201,6 +203,7 @@ curl -X POST https://media-collab-workbench.<子域>.workers.dev/api/bootstrap \
 
    脚本会读取 `data/db.json`，把 `users / sessions / topics / comments / materials / messages / weeklySettlements / announcements` 转成 `migrations/_migrated_seed.sql`（已做 SQL 转义），再视情况调用 `wrangler d1 execute` 写入远端。
 
+   - **注意**：`_migrated_seed.sql` 生成在 `migrations/` 目录下（已被 .gitignore 排除）。若你本地使用 `wrangler d1 migrations apply`，请先把该文件移出 `migrations/` 目录（或用 `--apply` 让脚本直接以 `d1 execute` 写入），避免被 migrations 机制重复登记执行；
    - `logs` 集合云端已移除，不迁移；
    - `messageRecycle` 已并入 `messages` 的软删除机制（`deleted=1` + `deletedAt`），不单独迁移；
    - 迁移后用脚本打印的临时密码登录，并尽快修改。

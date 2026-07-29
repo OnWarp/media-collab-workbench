@@ -1,7 +1,9 @@
 # 项目记忆：media-collab-workbench
 
 ## 架构
-- Cloudflare Workers 应用：`worker.js` + `wrangler.jsonc`。Workers Static Assets 托管 `public/` + **D1 数据库 `media-collab-db`**（绑定 `DB`，关系型 SQLite 持久化）+ R2 `UPLOADS`（桶名 `media-collab-uploads`）。
+- Cloudflare Workers 应用：`worker.js` + `wrangler.jsonc`。Workers Static Assets 托管 **`frontend/dist/`**（2026-07-29 起，SPA 回退）+ **D1 数据库 `media-collab-db`**（绑定 `DB`，关系型 SQLite 持久化）+ R2 `UPLOADS`（桶名 `media-collab-uploads`）。
+- **前端已重构**：`frontend/` = React 19 + TS + Vite + @cloudflare/kumo v2.8（standalone 样式，无 Tailwind）。echarts 动态 import 按需加载；manualChunks 分包 echarts/vendor/kumo。`public/` 为旧原生 JS 前端，仅供本地 server.js 模式。kumo API 要点：Tabs 用 `selectedValue`/`tabs`，Select 用 `items` 对象映射，Badge variant 有 orange/purple/green/blue 等。phosphor-icons 本地 2.1.9 可编译，声明 ^2.1.10 供 CI。
+- D1 迁移用 `wrangler d1 migrations apply --remote`（d1_migrations 表跟踪；0002 的 ALTER TABLE 不幂等，禁止改回 d1 execute 全量跑）。
 - 云端已**移除 Durable Object**：2026-07-28 由 Durable Object `AppState` 迁移至 D1。D1 表：users/sessions/topics/comments/materials/messages/weeklySettlements/announcements；JSON 字段以 TEXT 存；布尔用 INTEGER 0/1。
 - 本地模式：`server.js`（零依赖 Node，scrypt 密码哈希，`data/db.json` 存储，`public/uploads/` 存文件）。`server.js` 是 CommonJS，`worker.js` 是 ESM，故 `package.json` 不能设 `type:module`。
 - 注意密码算法差异：本地 server.js = scrypt；云端 worker.js = PBKDF2(SHA-256, 21万次)。迁移本地数据时必须重置密码（见迁移脚本）。

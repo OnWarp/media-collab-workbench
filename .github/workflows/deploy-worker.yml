@@ -36,9 +36,11 @@ jobs:
       - name: 安装 Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
-      - name: 安装依赖（wrangler）
+      - name: 安装根依赖（wrangler）
         run: npm install
 
       # worker.js 使用 ESM 语法，但仓库未启用 "type": "module"（server.js 是 CommonJS）。
@@ -48,6 +50,18 @@ jobs:
           cp worker.js worker.check.mjs
           node --check worker.check.mjs
           rm -f worker.check.mjs
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: 构建前端（tsc + vite）
+        working-directory: frontend
+        run: npm run build
+
+      - name: 校验前端构建产物
+        run: test -f frontend/dist/index.html || (echo "缺少 frontend/dist/index.html" && exit 1)
 
       - name: 创建 R2 存储桶（已存在则忽略）
         run: npx wrangler r2 bucket create media-collab-uploads --config wrangler.jsonc || true
@@ -68,8 +82,11 @@ jobs:
           # 把 wrangler.jsonc 里的占位符替换成真实 id（仅修改本次流水线的临时文件，不影响仓库）
           jq --arg id "$DB_ID" '.d1_databases[0].database_id = $id' wrangler.jsonc > wrangler.jsonc.tmp && mv wrangler.jsonc.tmp wrangler.jsonc
 
-      - name: 执行 D1 表结构迁移
-        run: npx wrangler d1 execute media-collab-db --remote --file=./migrations/0001_init.sql --config wrangler.jsonc
+      - name: 执行 D1 数据库迁移（migrations apply，按序且只执行一次）
+        run: |
+          # d1 migrations apply 通过远端 d1_migrations 表跟踪已执行的迁移文件，
+          # 首次运行会把 0001（幂等）与后续迁移按文件名顺序执行并登记，之后只执行新增迁移。
+          npx wrangler d1 migrations apply media-collab-db --remote --config wrangler.jsonc
 
       - name: 写入 BOOTSTRAP_TOKEN 密钥（仅当仓库配置了该 Secret 时执行）
         if: ${{ env.BOOTSTRAP_TOKEN != '' }}

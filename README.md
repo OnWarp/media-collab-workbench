@@ -6,8 +6,8 @@
 
 这是一个面向小型自媒体团队的**内容协作管理平台**，覆盖从选题发布、认领接单、文案/视频制作、审核验收、流量回收到结算付款的全流程。支持本地零依赖部署（开箱即跑）和 Cloudflare Workers 云端部署两种模式。
 
-- **技术栈**: 纯 Node.js 内置模块（零依赖） / Cloudflare Workers + D1 + R2
-- **前端**: 原生 HTML + CSS + JavaScript（苹果风设计系统，无构建步骤）
+- **技术栈**: 纯 Node.js 内置模块（本地零依赖后端） / Cloudflare Workers + D1 + R2（云端）
+- **前端**: React 19 + TypeScript + Vite + [@cloudflare/kumo](https://github.com/cloudflare/kumo) 组件库（`frontend/`，构建产物部署到 Workers Static Assets）；`public/` 为旧版原生 JS 前端（仅供本地 `server.js` 模式使用）
 - **存储**: JSON 文件（本地）/ Cloudflare D1（云端关系型 SQLite，持久化业务数据） + R2（文件上传）
 
 ## 核心功能
@@ -48,23 +48,24 @@
 
 ```
 media-collab-workbench/
-├── server.js               # 本地后端服务（零依赖，1123 行）
-├── worker.js               # Cloudflare Workers 后端（D1 模式）
-├── public/                  # 前端静态资源（无构建）
-│   ├── index.html          # 入口页面
-│   ├── app.js              # 前端逻辑（1227 行）
-│   └── styles.css          # 苹果风样式（319 行）
-├── package.json             # 项目元信息
+├── server.js               # 本地后端服务（零依赖）
+├── worker.js               # Cloudflare Workers 后端（D1 + R2 模式）
+├── frontend/                # 新版前端工程（React 19 + Vite + kumo）
+│   ├── src/                # 组件 / 视图 / API 封装 / 类型
+│   ├── index.html          # Vite 入口
+│   └── dist/               # 构建产物（wrangler 部署此目录，git 忽略）
+├── public/                  # 旧版前端（仅本地 server.js 模式使用）
+├── package.json             # 项目元信息（含 build 脚本）
 ├── start.bat                # Windows 一键启动
 ├── start.sh                 # macOS/Linux 一键启动
 ├── wrangler.jsonc           # Cloudflare Workers 配置（正式，含 D1/R2 绑定）
 ├── wrangler.jsonc.example   # Cloudflare Workers 配置模板
-├── migrations/              # D1 数据库表结构与时序迁移（0001_init.sql）
+├── migrations/              # D1 数据库迁移（0001_init / 0002_features，按序执行）
 ├── scripts/                 # 运维脚本（如 migrate-to-d1.mjs 本地数据迁移）
 ├── 部署说明.txt              # 本地部署说明
 ├── WORKERS_DEPLOY.md        # Workers 部署说明
 ├── .github/workflows/
-│   └── deploy-worker.yml    # GitHub Actions 自动部署
+│   └── deploy-worker.yml    # GitHub Actions 自动部署（构建前端 → 迁移 D1 → 部署）
 └── .gitignore
 ```
 

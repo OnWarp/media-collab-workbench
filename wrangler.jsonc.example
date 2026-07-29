@@ -15,5 +15,8 @@
   "r2_buckets": [
     { "binding": "UPLOADS", "bucket_name": "media-collab-uploads" }
   ],
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
+  "migrations": [
+    { "tag": "drop-appstate-do", "deleted_classes": ["AppState"] }
+  ]
 }

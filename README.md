@@ -49,7 +49,7 @@
 ```
 media-collab-workbench/
 ├── server.js               # 本地后端服务（零依赖）
-├── worker.js               # Cloudflare Workers 后端（D1 + R2 模式）
+├── worker.mjs               # Cloudflare Workers 后端（D1 + R2 模式）
 ├── frontend/                # 新版前端工程（React 19 + Vite + kumo）
 │   ├── src/                # 组件 / 视图 / API 封装 / 类型
 │   ├── index.html          # Vite 入口
@@ -108,7 +108,7 @@ BOOTSTRAP_ADMIN_USERNAME=myadmin BOOTSTRAP_ADMIN_PASSWORD=your_strong_password n
 
 ### 模式 B: Cloudflare Workers 部署
 
-架构: Workers Static Assets 托管 `public/` + D1 数据库（`media-collab-db`，关系型 SQLite，持久化全部业务数据）+ R2 存储上传文件。D1 通过 `wrangler.jsonc` 的 `d1_databases` 绑定注入，无需自建数据库连接串，也不依赖 Durable Object。
+架构: Workers Static Assets 托管 `frontend/dist/`（React 构建产物） + D1 数据库（`media-collab-db`，关系型 SQLite，持久化全部业务数据）+ R2 存储上传文件。D1 通过 `wrangler.jsonc` 的 `d1_databases` 绑定注入，无需自建数据库连接串，也不依赖 Durable Object。
 
 ```bash
 # 1. 安装 wrangler
@@ -131,7 +131,7 @@ npx wrangler dev
 npx wrangler deploy
 ```
 
-推送到 `main` 分支会触发 GitHub Actions 自动部署（流水线会自动创建 R2、创建/复用 D1、执行表结构迁移、写入 `BOOTSTRAP_TOKEN`；若配置了 `ADMIN_USERNAME` + `ADMIN_PASSWORD` 还会在部署后自动创建管理员账号）。需要在仓库 Settings > Secrets 添加 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`，建议再添加 `BOOTSTRAP_TOKEN`、以及可选的 `D1_DATABASE_ID`、`ADMIN_USERNAME`、`ADMIN_PASSWORD`。
+推送到 `main` 分支会触发 GitHub Actions 自动部署（流水线会自动创建 R2、创建/复用 D1、执行表结构迁移、写入 `BOOTSTRAP_TOKEN`；若同时配置了 `BOOTSTRAP_TOKEN` + `ADMIN_USERNAME` + `ADMIN_PASSWORD` 还会在部署后自动创建管理员账号）。需要在仓库 Settings > Secrets 添加 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`，建议再添加 `BOOTSTRAP_TOKEN`、以及可选的 `D1_DATABASE_ID`、`ADMIN_USERNAME`、`ADMIN_PASSWORD`。
 
 如有本地 `server.js` 的历史数据需要保留，参见 [WORKERS_DEPLOY.md](./WORKERS_DEPLOY.md) 的「已有本地数据迁移」章节，用 `node scripts/migrate-to-d1.mjs` 灌入 D1。
 

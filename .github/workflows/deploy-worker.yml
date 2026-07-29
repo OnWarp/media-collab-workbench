@@ -43,13 +43,11 @@ jobs:
       - name: 安装根依赖（wrangler）
         run: npm install
 
-      # worker.js 使用 ESM 语法，但仓库未启用 "type": "module"（server.js 是 CommonJS）。
-      # 复制成 .mjs 再用 node --check，确保语法校验在任意 Node 版本下都正确。
-      - name: 语法校验 worker.js
+      # worker.mjs 即 ESM 入口（仓库未启用 "type": "module"，因 server.js 是 CommonJS）。
+      # 直接用 .mjs 校验；wrangler 也会按 ESM 处理该入口，避免被误判为 CommonJS 导致部署失败。
+      - name: 语法校验 worker.mjs
         run: |
-          cp worker.js worker.check.mjs
-          node --check worker.check.mjs
-          rm -f worker.check.mjs
+          node --check worker.mjs
 
       - name: 安装前端依赖
         working-directory: frontend
@@ -92,15 +90,26 @@ jobs:
         if: ${{ env.BOOTSTRAP_TOKEN != '' }}
         run: echo "$BOOTSTRAP_TOKEN" | npx wrangler secret put BOOTSTRAP_TOKEN --config wrangler.jsonc
 
+      - name: 检查 BOOTSTRAP_TOKEN（缺失则提示）
+        if: ${{ env.BOOTSTRAP_TOKEN == '' }}
+        run: 'echo "::warning::未配置 BOOTSTRAP_TOKEN Secret，将跳过自动创建管理员；如需部署后自动建管理员，请在仓库 Secrets 中设置 BOOTSTRAP_TOKEN（建议用 openssl rand -hex 32）。"'
+
       - name: 部署到 Cloudflare Workers
         run: |
-          # 捕获部署输出的 Worker URL，供后续自动引导管理员使用
+          # 捕获部署输出与退出码；临时关闭 -e，避免 wrangler 失败时 bash 直接终止导致真实错误被吞
+          set +e
           OUT=$(npx wrangler deploy --config wrangler.jsonc 2>&1)
+          CODE=$?
           echo "$OUT"
+          set -e
           echo "WORKER_URL=$(echo "$OUT" | grep -oE 'https://[a-zA-Z0-9._-]+\.workers\.dev' | head -n1)" >> "$GITHUB_ENV"
+          if [ "$CODE" -ne 0 ]; then
+            echo "::error::wrangler deploy 失败（退出码 $CODE），详见上方输出"
+            exit "$CODE"
+          fi
 
-      - name: 自动创建管理员账号（使用机密变量 ADMIN_USERNAME / ADMIN_PASSWORD）
-        if: ${{ env.ADMIN_USERNAME != '' && env.ADMIN_PASSWORD != '' }}
+      - name: 自动创建管理员账号（需同时配置 BOOTSTRAP_TOKEN / ADMIN_USERNAME / ADMIN_PASSWORD）
+        if: ${{ env.BOOTSTRAP_TOKEN != '' && env.ADMIN_USERNAME != '' && env.ADMIN_PASSWORD != '' }}
         run: |
           if [ -z "$WORKER_URL" ]; then echo "未获取到 Worker URL，跳过引导"; exit 0; fi
           if [ ${#ADMIN_PASSWORD} -lt 10 ]; then echo "ADMIN_PASSWORD 至少 10 位，跳过引导"; exit 0; fi

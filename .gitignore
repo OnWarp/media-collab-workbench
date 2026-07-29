@@ -29,6 +29,9 @@ migrations/_migrated_seed.sql
 # ===== 历史上传产生的冗余嵌套副本（与仓库同名，已在根目录维护正式版本） =====
 media-collab-workbench/
 
+# ===== 旧的 Worker 入口：已重命名为 worker.mjs（ESM）。若因 Windows 文件锁无法删除，落入此忽略项 =====
+worker.js
+
 # ===== 系统文件 =====
 .DS_Store
 Thumbs.db

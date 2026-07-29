@@ -1,6 +1,6 @@
 # Cloudflare Workers 部署手册
 
-本工作台后端 `worker.js` 采用 **Workers Static Assets + D1 + R2** 架构，可直接部署到 Cloudflare Workers，无需任何本地依赖或自建数据库服务。
+本工作台后端 `worker.mjs` 采用 **Workers Static Assets + D1 + R2** 架构，可直接部署到 Cloudflare Workers，无需任何本地依赖或自建数据库服务。
 
 架构分工：
 
@@ -9,7 +9,7 @@
 - **R2 Bucket（`UPLOADS`）**：保存上传的图片与视频文件
 - **Worker 路由**：`/api/*` 和 `/uploads/*` 走 `run_worker_first`，其余路径直接返回静态资源
 
-> 本地模式 `server.js`（依赖 Node `http` 与本地 `data/db.json`）**不能**直接部署到 Workers；云端请用 `worker.js`。
+> 本地模式 `server.js`（依赖 Node `http` 与本地 `data/db.json`）**不能**直接部署到 Workers；云端请用 `worker.mjs`。
 
 ---
 
@@ -40,7 +40,7 @@
 - `r2_buckets` 绑定 `UPLOADS` → bucket `media-collab-uploads`
 - `observability.enabled: true`
 
-> 可选增强：若日后用到 Node 内置 API，可在 `wrangler.jsonc` 加 `"compatibility_flags": ["nodejs_compat"]`。当前 `worker.js` 只用 Web 标准 API（Web Crypto / Fetch / FormData 等），不添加也能正常运行。
+> 可选增强：若日后用到 Node 内置 API，可在 `wrangler.jsonc` 加 `"compatibility_flags": ["nodejs_compat"]`。当前 `worker.mjs` 只用 Web 标准 API（Web Crypto / Fetch / FormData 等），不添加也能正常运行。
 
 ---
 
@@ -50,7 +50,7 @@
 npx wrangler r2 bucket create media-collab-uploads
 ```
 
-桶名需全局唯一；若提示冲突，修改 `wrangler.jsonc` 中 `r2_buckets[0].bucket_name` 与 `worker.js` 中的引用保持一致即可。
+桶名需全局唯一；若提示冲突，修改 `wrangler.jsonc` 中 `r2_buckets[0].bucket_name` 与 `worker.mjs` 中的引用保持一致即可。
 
 ---
 
@@ -74,7 +74,7 @@ npx wrangler d1 migrations apply media-collab-db --remote
 
 ## 五、设置运行时密钥（Secret）
 
-Worker 运行时只需要一个密钥 `BOOTSTRAP_TOKEN`：用于首次创建管理员账号（对应 `worker.js` 中 `/api/bootstrap` 接口的 `x-bootstrap-token` 校验）。**切勿写入 `wrangler.jsonc` 的 `vars` 或提交进仓库。**
+Worker 运行时只需要一个密钥 `BOOTSTRAP_TOKEN`：用于首次创建管理员账号（对应 `worker.mjs` 中 `/api/bootstrap` 接口的 `x-bootstrap-token` 校验）。**切勿写入 `wrangler.jsonc` 的 `vars` 或提交进仓库。**
 
 ```bash
 npx wrangler secret put BOOTSTRAP_TOKEN
@@ -118,7 +118,7 @@ npm run build          # 构建前端 → frontend/dist
 npx wrangler deploy
 ```
 
-该命令会：编译上传 `worker.js`、上传 `frontend/dist/` 静态资源、绑定 D1 与 R2。部署完成后终端会给出生产域名（形如 `https://media-collab-workbench.<子域>.workers.dev`）。
+该命令会：编译上传 `worker.mjs`、上传 `frontend/dist/` 静态资源、绑定 D1 与 R2。部署完成后终端会给出生产域名（形如 `https://media-collab-workbench.<子域>.workers.dev`）。
 
 ### 7.1 在生产环境初始化管理员
 
@@ -139,14 +139,14 @@ curl -X POST https://media-collab-workbench.<子域>.workers.dev/api/bootstrap \
 
 推送（或合并）到 `main` 分支会自动触发 `.github/workflows/deploy-worker.yml`，无需手动登录服务器。该流水线一次完成：
 
-1. `node --check worker.js` 语法校验（复制成 `.mjs` 以兼容 CommonJS 仓库）
+1. `node --check worker.mjs` 语法校验（ESM 入口；仓库因 server.js 为 CommonJS 未启用 type:module，worker 入口用 .mjs 强制 ESM）
 2. 安装并构建前端：`frontend/` 下 `npm ci && npm run build`（tsc 类型检查 + vite 构建 → `frontend/dist`），并校验产物存在
 3. 创建 R2 桶 `media-collab-uploads`（已存在则忽略）
 4. 准备 D1 数据库 `media-collab-db`：若配置了机密变量 `D1_DATABASE_ID` 则直接用它，否则自动创建并按名称取回 `database_id` 写回本次流水线的 `wrangler.jsonc`
 5. `wrangler d1 migrations apply --remote`：按文件名顺序执行 `migrations/` 下的全部迁移（`d1_migrations` 表跟踪，只执行未跑过的）
 6. 写入运行密钥 `BOOTSTRAP_TOKEN`（仓库里配了该 Secret 才执行）
 7. `wrangler deploy --config wrangler.jsonc` 正式部署，并捕获 Worker URL
-8. 若配置了 `ADMIN_USERNAME` + `ADMIN_PASSWORD`，自动调用 `/api/bootstrap` 创建管理员（仅空库生效）
+8. 若同时配置了 `BOOTSTRAP_TOKEN` + `ADMIN_USERNAME` + `ADMIN_PASSWORD`，自动调用 `/api/bootstrap` 创建管理员（仅空库生效）
 
 ### 8.1 需要的仓库密钥
 
@@ -158,7 +158,7 @@ curl -X POST https://media-collab-workbench.<子域>.workers.dev/api/bootstrap \
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账户 ID | 是 |
 | `BOOTSTRAP_TOKEN` | Worker 运行时密钥，用于 `/api/bootstrap` 创建首个管理员；不配则跳过（部署仍可进行，但需自行用 `wrangler secret put` 设置后才能引导） | 建议 |
 | `D1_DATABASE_ID` | 可选。提供则直接使用该 D1 uuid，跳过自动创建 `media-collab-db`；不提供则 CI 自动创建 | 否 |
-| `ADMIN_USERNAME` | 可选。与 `ADMIN_PASSWORD` 同时配置后，部署完成自动调用 `/api/bootstrap` 创建管理员（仅空库生效，用完即失效） | 否 |
+| `ADMIN_USERNAME` | 可选。与 `BOOTSTRAP_TOKEN` + `ADMIN_PASSWORD` 同时配置后，部署完成自动调用 `/api/bootstrap` 创建管理员（仅空库生效，用完即失效） | 否 |
 | `ADMIN_PASSWORD` | 可选。初始管理员密码，至少 10 位 | 否 |
 
 > 三者都通过 GitHub Encrypted Secrets 注入，**不会**写入仓库或出现在 Actions 日志明文里。
@@ -169,7 +169,7 @@ curl -X POST https://media-collab-workbench.<子域>.workers.dev/api/bootstrap \
 2. 在仓库 Settings 添加上述三个 Secrets。
 3. 之后任何推送到 `main` 的提交都会自动部署；也可在 **Actions → Deploy Cloudflare Worker → Run workflow** 手动触发（`workflow_dispatch`）。
 4. 首次部署完成后：
-   - 若已配置 `ADMIN_USERNAME` + `ADMIN_PASSWORD`，流水线会**自动**调用 `/api/bootstrap` 创建管理员（仅空库生效，成功后即失效），无需手动操作；
+   - 若已同时配置 `BOOTSTRAP_TOKEN` + `ADMIN_USERNAME` + `ADMIN_PASSWORD`，流水线会**自动**调用 `/api/bootstrap` 创建管理员（仅空库生效，成功后即失效），无需手动操作；
    - 否则用 `BOOTSTRAP_TOKEN` 的值对生产域名手动调一次 `/api/bootstrap` 创建管理员（见 7.1）。
    若改用迁移脚本灌入了历史数据（见第九节），则库非空，引导不会执行，也无需再引导。
 

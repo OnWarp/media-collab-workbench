@@ -7,7 +7,7 @@
  *        [--config wrangler.jsonc] [--password <临时密码>] [--apply]
  *
  * 说明:
- * - 旧 server.js 用 scrypt 存储密码，新 worker.js（D1 版）用 PBKDF2(21 万次)。
+ * - 旧 server.js 用 scrypt 存储密码，新 worker.mjs（D1 版）用 PBKDF2(21 万次)。
  *   原有密码哈希无法移植，因此脚本会把迁移账号的密码统一重置为一个临时密码
  *   （用 --password 指定，或自动生成并打印到终端），登录后请尽快修改。
  * - 默认只生成 migrations/_migrated_seed.sql（已做 SQL 转义），加 --apply 才会
@@ -40,7 +40,7 @@ const config = args.get('config') || resolve(root, 'wrangler.jsonc');
 const apply = args.has('apply');
 const tmpPassword = args.get('password') || process.env.MIGRATE_PASSWORD || '';
 
-// ---- PBKDF2（与 worker.js 完全一致）----
+// ---- PBKDF2（与 worker.mjs 完全一致）----
 const enc = new TextEncoder();
 async function passwordHash(password, salt) {
   const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);

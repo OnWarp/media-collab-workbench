@@ -43,8 +43,7 @@ jobs:
             frontend/package-lock.json
 
       - name: 安装根依赖（wrangler）
-        run: |
-          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+        run: npm install
 
       - name: 语法校验 worker.mjs
         run: node --check worker.mjs
@@ -54,8 +53,7 @@ jobs:
 
       - name: 安装前端依赖
         working-directory: frontend
-        run: |
-          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+        run: npm install
 
       - name: TypeScript 类型检查
         working-directory: frontend
@@ -106,16 +104,14 @@ jobs:
             frontend/package-lock.json
 
       - name: 安装根依赖（wrangler）
-        run: |
-          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+        run: npm install
 
       - name: 语法校验 worker.mjs
         run: node --check worker.mjs
 
       - name: 安装前端依赖
         working-directory: frontend
-        run: |
-          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+        run: npm install
 
       - name: 构建前端（tsc + vite）
         working-directory: frontend
@@ -252,8 +248,7 @@ jobs:
 
       - name: 安装前端依赖
         working-directory: frontend
-        run: |
-          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+        run: npm install
 
       - name: 构建前端
         working-directory: frontend

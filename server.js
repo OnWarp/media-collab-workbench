@@ -364,7 +364,7 @@ async function handle(req, res) {
         recordLoginAttempt(ip);
         return json(res, 401, { error: '用户名或密码错误' });
       }
-      clearLoginAttempt(ip);
+      clearLoginAttempts(ip);
       if (user.passwordHashAlgo !== 'scrypt') { user.passwordHash = hashPassword(password, user.salt); user.passwordHashAlgo = 'scrypt'; }
       const token = genToken();
       db.sessions[token] = { userId: user.id, expiresAt: Date.now() + SESSION_TTL_MS };
@@ -1111,7 +1111,7 @@ async function handle(req, res) {
 }
 
 function publicUser(u) {
-  const { passwordHash, salt, ...rest } = u;
+  const { passwordHash, salt, passwordHashAlgo, ...rest } = u;
   return rest;
 }
 

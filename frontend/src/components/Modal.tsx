@@ -9,7 +9,7 @@ interface ModalProps {
   wide?: boolean;
 }
 
-export function Modal({ title, onClose, children, footer, bare }: ModalProps) {
+export function Modal({ title, onClose, children, footer, bare, wide }: ModalProps) {
   return (
     <div
       className="modal-overlay"
@@ -19,7 +19,7 @@ export function Modal({ title, onClose, children, footer, bare }: ModalProps) {
     >
       <div
         className="modal-box"
-        style={bare ? { width: 'auto', maxWidth: '90vw' } : undefined}
+        style={bare ? { width: 'auto', maxWidth: '90vw' } : wide ? { maxWidth: '900px' } : undefined}
       >
         {!bare && (
           <div

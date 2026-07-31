@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, Input, InputArea, Select } from '@cloudflare/kumo';
 import { useApp } from '../app-context';
 import {
+  authApi,
   SETTLE_OPTIONS,
   boardApi,
   looseUrl,
@@ -759,7 +760,7 @@ function Tutorial({ onClose }: { onClose: () => void }) {
               variant="primary"
               onClick={async () => {
                 try {
-                  await (await import('../api')).authApi.tutorialDone();
+                  await authApi.tutorialDone();
                 } catch {
                   /* ignore */
                 }

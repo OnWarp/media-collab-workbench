@@ -71,25 +71,37 @@ async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const isForm = opts.body instanceof FormData;
   if (!isForm && opts.body != null) headers['content-type'] = 'application/json';
   if (token) headers['authorization'] = 'Bearer ' + token;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
   const merged: RequestInit = {
     ...opts,
     headers: { ...headers, ...(opts.headers as Record<string, string> | undefined) },
+    signal: controller.signal,
   };
-  const res = await fetch('/api' + path, merged);
-  const ct = res.headers.get('content-type') || '';
-  let data: any = null;
-  if (ct.includes('application/json')) {
-    try {
-      data = await res.json();
-    } catch {
-      data = null;
+  try {
+    const res = await fetch('/api' + path, merged);
+    const ct = res.headers.get('content-type') || '';
+    let data: any = null;
+    if (ct.includes('application/json')) {
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
     }
+    if (!res.ok) {
+      const msg = data && data.error ? String(data.error) : '请求失败（' + res.status + '）';
+      throw new ApiError(msg, res.status);
+    }
+    return data as T;
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new ApiError('请求超时，请稍后重试', 408);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-  if (!res.ok) {
-    const msg = data && data.error ? String(data.error) : '请求失败（' + res.status + '）';
-    throw new ApiError(msg, res.status);
-  }
-  return data as T;
 }
 
 // ---------- 查询参数 ----------

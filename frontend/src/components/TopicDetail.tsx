@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Badge, Button, InputArea } from '@cloudflare/kumo';
+import { Badge, Button, Input, InputArea, Select } from '@cloudflare/kumo';
 import { useApp } from '../app-context';
-import { topicApi } from '../api';
+import { topicApi, uploadApi } from '../api';
 import type { TopicDetail as TopicDetailT, Topic, WorkType } from '../types';
 import { Modal } from './Modal';
 import {
@@ -247,9 +247,7 @@ export function TopicDetail({ id, onClose }: { id: number; onClose: () => void }
       {t.copyText && (
         <div className="detail-section">
           <h4>文案内容</h4>
-          <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, background: '#f7f8fa', padding: 12, borderRadius: 8 }}>
-            {t.copyText}
-          </div>
+          <div className="copy-box">{t.copyText}</div>
         </div>
       )}
       {(t.videoType || (t.mediaLinks || []).some((m) => m.type === 'video')) && (
@@ -264,7 +262,7 @@ export function TopicDetail({ id, onClose }: { id: number; onClose: () => void }
           <div className="ev-grid">
             {t.settlementEvidence.map((u, i) => (
               <a key={i} href={u} target="_blank" rel="noopener">
-                <img src={u} className="ev-img" />
+                <img src={u} className="ev-img" alt={`凭证 ${i + 1}`} />
               </a>
             ))}
           </div>
@@ -357,10 +355,12 @@ function ClaimModal({ id, preset, onClose, onDone }: { id: number; preset: strin
     <Modal title="选择接单类型" onClose={onClose}>
       <div className="field">
         <label>接单类型</label>
-        <select value={wt} onChange={(e) => setWt(e.target.value)} style={{ width: '100%', padding: 11, borderRadius: 12, border: '1px solid var(--line)' }}>
-          <option value="full">全流程（文案+视频）· 单价 ¥40</option>
-          <option value="copywriting">仅文案 · 单价 ¥15</option>
-        </select>
+        <Select
+          aria-label="接单类型"
+          value={wt}
+          onValueChange={(v) => setWt(v as string)}
+          items={{ full: '全流程（文案+视频）· 单价 ¥40', copywriting: '仅文案 · 单价 ¥15' }}
+        />
       </div>
       <div className="modal-actions">
         <Button onClick={onClose}>取消</Button>
@@ -453,7 +453,7 @@ function SubmitVideoModal({
       {mode === 'import' ? (
         <div className="field">
           <label>视频链接（必填）</label>
-          <input className="grow" style={{ width: '100%', padding: 11, borderRadius: 12, border: '1px solid var(--line)' }} placeholder="https:// 或 v.douyin.com/xxx" value={link} onChange={(e) => setLink(e.target.value)} />
+          <Input className="grow" placeholder="https:// 或 v.douyin.com/xxx" value={link} onChange={(e) => setLink(e.target.value)} />
         </div>
       ) : (
         <div className="field">
@@ -468,7 +468,7 @@ function SubmitVideoModal({
               try {
                 const fd = new FormData();
                 fd.append('file', f);
-                const r = await (await import('../api')).uploadApi.video(fd);
+                const r = await uploadApi.video(fd);
                 setUploaded(r.url);
                 toast('视频已上传');
               } catch (err) {
@@ -533,18 +533,17 @@ function DiscardModal({
       <p style={{ color: 'var(--ink-2)', marginTop: 0 }}>该选题将进入回收站，过期后自动永久清除。请选择保留天数：</p>
       <div className="field">
         <label>回收站保留天数</label>
-        <select value={days} onChange={(e) => setDays(e.target.value)} style={{ width: '100%', padding: 11, borderRadius: 12, border: '1px solid var(--line)' }}>
-          <option value="7">7 天</option>
-          <option value="14">14 天</option>
-          <option value="28">28 天</option>
-          <option value="30">30 天（默认）</option>
-          <option value="custom">自定义…</option>
-        </select>
+        <Select
+          aria-label="保留天数"
+          value={days}
+          onValueChange={(v) => setDays(v as string)}
+          items={{ '7': '7 天', '14': '14 天', '28': '28 天', '30': '30 天（默认）', custom: '自定义…' }}
+        />
       </div>
       {days === 'custom' && (
         <div className="field">
           <label>自定义天数（1-365）</label>
-          <input type="number" value={custom} onChange={(e) => setCustom(e.target.value)} style={{ width: '100%', padding: 11, borderRadius: 12, border: '1px solid var(--line)' }} />
+          <Input type="number" value={custom} onChange={(e) => setCustom(e.target.value)} />
         </div>
       )}
       <div className="modal-actions">

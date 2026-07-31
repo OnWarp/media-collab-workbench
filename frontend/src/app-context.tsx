@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from 'react';
@@ -126,7 +127,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (me) refreshPending();
   }, [me, refreshPending, refreshSignal]);
 
-  const value: AppContextValue = {
+  const value = useMemo<AppContextValue>(() => ({
     me,
     pending,
     view,
@@ -141,7 +142,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     closeModal,
     refreshView,
     logout,
-  };
+  }), [me, pending, view, modal, refreshSignal, navigate, setMe, refreshPending, toast, toasts, openModal, closeModal, refreshView, logout]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

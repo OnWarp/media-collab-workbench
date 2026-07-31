@@ -61,6 +61,14 @@ export function Loading({ label = '加载中…' }: { label?: string }) {
   );
 }
 
-export function FavStar({ on }: { on: boolean }) {
-  return <span className={on ? 'fav' : 'fav empty'}>{on ? '★' : '☆'}</span>;
+export function FavStar({ on, onClick }: { on: boolean; onClick?: (e: React.MouseEvent) => void }) {
+  return (
+    <span
+      data-fav
+      className={on ? 'fav' : 'fav empty'}
+      onClick={(e) => { e.stopPropagation(); onClick?.(e); }}
+    >
+      {on ? '★' : '☆'}
+    </span>
+  );
 }

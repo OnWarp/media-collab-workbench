@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button, Input, Tabs } from '@cloudflare/kumo';
 import { useApp } from '../app-context';
-import { authApi, setStoredToken } from '../api';
+import { authApi } from '../api';
 
 export function Login() {
   const { setMe, navigate, toast, openModal } = useApp();
@@ -18,14 +18,12 @@ export function Login() {
     try {
       if (tab === 'login') {
         const r = await authApi.login(username, password);
-        setStoredToken(r.token);
         setMe(r.user);
         toast('登录成功');
         if (r.user.showTutorial) openModal({ type: 'tutorial' });
         else navigate('board');
       } else {
         const r = await authApi.register(username, password, displayName);
-        setStoredToken(r.token);
         setMe(r.user);
         toast('注册成功');
         openModal({ type: 'tutorial' });

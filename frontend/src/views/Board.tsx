@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Input, Select } from '@cloudflare/kumo';
 import { useApp } from '../app-context';
 import { boardApi, topicApi } from '../api';
-import type { Board as BoardT, Topic } from '../types';
+import type { Board as BoardT, Topic, UserProgress } from '../types';
 import { Loading } from '../components/common';
 import { TopicCard } from '../components/TopicCard';
 
@@ -10,7 +10,7 @@ export function Board() {
   const { openModal, navigate, pending, toast, refreshView, me } = useApp();
   const [board, setBoard] = useState<BoardT>({ notice: '', referenceVideos: [] });
   const [topics, setTopics] = useState<Topic[]>([]);
-  const [progress, setProgress] = useState<Record<number, any>>({});
+  const [progress, setProgress] = useState<Record<number, UserProgress>>({});
   const [loading, setLoading] = useState(true);
   const [favOnly, setFavOnly] = useState(false);
   const [filters, setFilters] = useState({

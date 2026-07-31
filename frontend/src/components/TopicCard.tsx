@@ -5,19 +5,21 @@ import { useApp } from '../app-context';
 import { topicApi } from '../api';
 
 export function TopicCard({ t, onClick }: { t: Topic; onClick: () => void }) {
-  const { me } = useApp();
+  const { me, toast } = useApp();
   const faved = (t.favoritedBy || []).includes(me?.id ?? -1);
   return (
-    <div
-      className="card clickable"
-      onClick={(e) => {
-        if ((e.target as HTMLElement).closest('.fav-btn')) return;
-        onClick();
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+    <div className="card clickable" onClick={onClick}>
+      <div className="tc-head">
         <h3>{t.title}</h3>
-        <FavStar on={faved} />
+        <FavStar
+          on={faved}
+          onClick={async () => {
+            try {
+              const r = await topicApi.favorite(t.id);
+              if (r.favorited) toast('已收藏');
+            } catch {}
+          }}
+        />
       </div>
       <StageBar t={t} />
       <p className="intro">{t.intro || '（无简介）'}</p>
@@ -50,7 +52,7 @@ export function ReviewCard({ t, onOpen }: { t: Topic; onOpen: () => void }) {
   const stageName = t.reviewStage === 'video' ? '视频' : '文案';
   return (
     <div className="card clickable" onClick={onOpen}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+      <div className="tc-head">
         <h3>{t.title}</h3>
         <span className="tag review">{stageName}待审</span>
       </div>
@@ -89,7 +91,7 @@ export function RecycleCard({
   const days = t.recycleDaysLeft ?? 0;
   return (
     <div className="card recycle-card" onClick={onOpen}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+      <div className="tc-head">
         <h3>{t.title}</h3>
         <span className="tag recycled">🗑️ 回收站</span>
       </div>
@@ -117,9 +119,4 @@ export function RecycleCard({
       </div>
     </div>
   );
-}
-
-export async function toggleFav(t: Topic) {
-  const r = await topicApi.favorite(t.id);
-  return r.favorited;
 }

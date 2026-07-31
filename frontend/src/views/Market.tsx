@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, Select } from '@cloudflare/kumo';
 import { useApp } from '../app-context';
-import { seriesApi, topicApi } from '../api';
+import { seriesApi, topicApi, type TopicQuery } from '../api';
 import type { SeriesItem, Topic } from '../types';
 import { Loading } from '../components/common';
 import { TopicCard } from '../components/TopicCard';
@@ -15,10 +15,11 @@ export function Market() {
   const [sort, setSort] = useState('updated');
   const [loading, setLoading] = useState(true);
 
-  const load = async () => {
+  const loadAll = async () => {
     setLoading(true);
     try {
-      const q: any = { keyword };
+      const q: TopicQuery = {};
+      if (keyword) q.keyword = keyword;
       if (seriesFilter) q.series = seriesFilter;
       if (sort) q.sort = sort;
       const list = await topicApi.list(q);
@@ -40,13 +41,11 @@ export function Market() {
 
   useEffect(() => {
     loadSeries();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshView]);
+    loadAll();
+  }, [refreshView, keyword, seriesFilter, sort]);
 
   return (
     <div>
@@ -56,20 +55,17 @@ export function Market() {
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           onKeyDown={(e) => {
-            if ((e as React.KeyboardEvent).key === 'Enter') load();
+            if ((e as React.KeyboardEvent).key === 'Enter') loadAll();
           }}
         />
-        <Button size="sm" onClick={load}>
+        <Button size="sm" onClick={loadAll}>
           搜索
         </Button>
         <Select
           aria-label="排序"
           placeholder="最近更新"
           value={sort}
-          onValueChange={(v) => {
-            setSort(v as string);
-            setTimeout(load, 0);
-          }}
+          onValueChange={(v) => setSort(v as string)}
           items={{
             updated: '最近更新',
             library_desc: '在库最久',
@@ -89,10 +85,7 @@ export function Market() {
               <span
                 key={s.name}
                 className={'series-chip' + (seriesFilter === s.name ? ' active' : '')}
-                onClick={() => {
-                  setSeriesFilter((f) => (f === s.name ? null : s.name));
-                  setTimeout(load, 0);
-                }}
+                onClick={() => setSeriesFilter((f) => (f === s.name ? null : s.name))}
               >
                 #{s.name} <b>{s.count}</b>
               </span>
@@ -100,10 +93,7 @@ export function Market() {
             {seriesFilter && (
               <span
                 className="series-clear"
-                onClick={() => {
-                  setSeriesFilter(null);
-                  setTimeout(load, 0);
-                }}
+                onClick={() => setSeriesFilter(null)}
               >
                 清除筛选 ✕
               </span>

@@ -5,6 +5,19 @@
 
 const encoder = new TextEncoder();
 const DAY = 86400000;
+
+// ---------- 登录限流 ----------
+const loginAttempts = new Map();
+function recordAttempt(ip) {
+  const nowMs = Date.now();
+  const rec = loginAttempts.get(ip);
+  if (!rec || nowMs > rec.resetAt) {
+    loginAttempts.set(ip, { count: 1, resetAt: nowMs + 15 * 60000 });
+    return false;
+  }
+  rec.count++;
+  return rec.count > 5;
+}
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 const now = () => Date.now();
 const uuid = () => crypto.randomUUID();
@@ -240,8 +253,11 @@ async function handleApi(request, env) {
     return json({ token: tk, user: publicUser(u) });
   }
   if (p === '/api/login' && method === 'POST') {
+    const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+    if (recordAttempt(ip)) return json({ error: '登录尝试过于频繁，请15分钟后再试' }, 429);
     const u = await one(env.DB, 'SELECT * FROM users WHERE username=?', [String(body.username || '')]);
     if (!u || !safeEqual(u.passwordHash, await passwordHash(String(body.password || ''), u.salt))) return json({ error: '用户名或密码错误' }, 401);
+    loginAttempts.delete(ip);
     const tk = uuid();
     await run(env.DB, 'INSERT INTO sessions (token,userId,expiresAt) VALUES (?,?,?)', [tk, u.id, now() + 7 * DAY]);
     return json({ token: tk, user: publicUser(u) });

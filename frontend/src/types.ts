@@ -183,6 +183,26 @@ export interface Pending {
   unread: number;
 }
 
+// ---------- 看板进度 ----------
+export interface UserProgress {
+  name: string;
+  total: number;
+  byStatus: Record<TopicStatus, number>;
+  inProgress: Topic[];
+}
+
+// ---------- 选题表单 ----------
+export interface CreateTopicBody {
+  title: string;
+  intro?: string;
+  series?: string[];
+  referenceLinks?: string[];
+  copyText?: string;
+  mediaLinks?: MediaLink[];
+  workType?: WorkType;
+  deadline?: string;
+}
+
 // ---------- 统计 ----------
 export interface StatsMe {
   claimed: number;

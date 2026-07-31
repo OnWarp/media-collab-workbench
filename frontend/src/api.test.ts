@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { looseUrl, fmtTime, fmtMoney, stageOrder } from '../api';
-import type { Topic } from '../types';
+import { looseUrl, fmtTime, fmtMoney, stageOrder } from './api';
+import type { Topic } from './types';
 
 describe('looseUrl', () => {
   it('should return true for valid http URLs', () => {

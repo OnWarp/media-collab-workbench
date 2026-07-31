@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, Select } from '@cloudflare/kumo';
 import { useApp } from '../app-context';
+import type { ViewId } from '../app-context';
 import { boardApi, topicApi } from '../api';
 import type { Board as BoardT, Topic, UserProgress } from '../types';
 import { Loading } from '../components/common';
@@ -239,7 +240,7 @@ export function Board() {
 function RemindStrip() {
   const { pending, navigate, me } = useApp();
   if (!pending) return <div className="remind-strip" />;
-  const parts: { label: string; go: string; warn?: boolean }[] = [];
+  const parts: { label: string; go: ViewId; warn?: boolean }[] = [];
   if (pending.pendingClaim)
     parts.push({ label: `📝 待认领 ${pending.pendingClaim}`, go: 'market' });
   if (me?.role === 'admin') {

@@ -22,38 +22,28 @@ export function Board() {
     sort: 'updated',
   });
 
-  const load = async () => {
+  const loadAll = async () => {
+    setLoading(true);
     try {
-      const q: any = {};
-      if (filters.keyword) q.keyword = filters.keyword;
-      if (filters.status) q.status = filters.status;
-      if (filters.stage) q.stage = filters.stage;
-      if (filters.workType) q.workType = filters.workType;
-      if (filters.settlement) q.settlement = filters.settlement;
-      if (filters.sort) q.sort = filters.sort;
-      if (favOnly) q.favorite = true;
-      const list = await topicApi.list(q);
-      setTopics(list);
-    } catch (e) {
-      toast(e instanceof Error ? e.message : '加载失败');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadBoard = async () => {
-    try {
-      setBoard(await boardApi.get());
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const loadProgress = async () => {
-    try {
-      const all = await topicApi.list();
-      const byUser: Record<number, any> = {};
-      all.forEach((t) => {
+      const [boardData, topicList] = await Promise.all([
+        boardApi.get().catch(() => ({ notice: '', referenceVideos: [] })),
+        (async () => {
+          const q: Record<string, unknown> = {};
+          if (filters.keyword) q.keyword = filters.keyword;
+          if (filters.status) q.status = filters.status;
+          if (filters.stage) q.stage = filters.stage;
+          if (filters.workType) q.workType = filters.workType;
+          if (filters.settlement) q.settlement = filters.settlement;
+          if (filters.sort) q.sort = filters.sort;
+          if (favOnly) q.favorite = true;
+          return topicApi.list(q);
+        })(),
+      ]);
+      setBoard(boardData);
+      setTopics(topicList);
+      // Build progress from topic list (no extra API call)
+      const byUser: Record<number, { name: string; total: number; byStatus: Record<string, number>; inProgress: Topic[] }> = {};
+      topicList.forEach((t) => {
         if (!t.claimerId) return;
         const u =
           byUser[t.claimerId] ||
@@ -68,17 +58,17 @@ export function Board() {
         if (t.status === 'in_progress' || t.status === 'review') u.inProgress.push(t);
       });
       setProgress(byUser);
-    } catch {
-      /* ignore */
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '加载失败');
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadBoard();
-    load();
-    loadProgress();
+    loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshView]);
+  }, [refreshView, favOnly, filters]);
 
   const isAdmin = me?.role === 'admin';
 
@@ -162,7 +152,7 @@ export function Board() {
           value={filters.keyword}
           onChange={(e) => setFilters({ ...filters, keyword: e.target.value })}
           onKeyDown={(e) => {
-            if ((e as React.KeyboardEvent).key === 'Enter') load();
+            if ((e as React.KeyboardEvent).key === 'Enter') loadAll();
           }}
         />
         <Select
@@ -216,17 +206,14 @@ export function Board() {
             library_asc: '最新入库',
           }}
         />
-        <Button size="sm" onClick={load}>
+        <Button size="sm" onClick={loadAll}>
           筛选
         </Button>
         <div className="spacer" />
         <Button
           size="sm"
           variant={favOnly ? 'primary' : 'secondary'}
-          onClick={() => {
-            setFavOnly((f) => !f);
-            setTimeout(load, 0);
-          }}
+          onClick={() => setFavOnly((f) => !f)}
         >
           ★ 我的收藏
         </Button>
@@ -250,12 +237,12 @@ export function Board() {
 }
 
 function RemindStrip() {
-  const { pending, navigate } = useApp();
+  const { pending, navigate, me } = useApp();
   if (!pending) return <div className="remind-strip" />;
-  const parts: { label: string; go: any; warn?: boolean }[] = [];
+  const parts: { label: string; go: string; warn?: boolean }[] = [];
   if (pending.pendingClaim)
     parts.push({ label: `📝 待认领 ${pending.pendingClaim}`, go: 'market' });
-  if (useApp().me?.role === 'admin') {
+  if (me?.role === 'admin') {
     if (pending.review) parts.push({ label: `✅ 待审核 ${pending.review}`, go: 'review' });
     if (pending.pendingSettle)
       parts.push({ label: `💰 待结算 ${pending.pendingSettle}`, go: 'review', warn: true });

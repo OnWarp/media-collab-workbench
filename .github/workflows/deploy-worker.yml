@@ -177,7 +177,10 @@ jobs:
         id: deploy
         run: |
           set +e
-          OUT=$(npx wrangler deploy --config wrangler.jsonc 2>&1)
+          VAR_ARGS=""
+          if [ -n "$ADMIN_USERNAME" ]; then VAR_ARGS="$VAR_ARGS --var ADMIN_USERNAME=$ADMIN_USERNAME"; fi
+          if [ -n "$ADMIN_PASSWORD" ]; then VAR_ARGS="$VAR_ARGS --var ADMIN_PASSWORD=$ADMIN_PASSWORD"; fi
+          OUT=$(npx wrangler deploy --config wrangler.jsonc $VAR_ARGS 2>&1)
           CODE=$?
           echo "$OUT"
           set -e
@@ -194,30 +197,6 @@ jobs:
           if [ "$CODE" -ne 0 ]; then
             echo "::error::wrangler deploy 失败（退出码 $CODE）"
             exit "$CODE"
-          fi
-
-      - name: 自动创建管理员（空库 + 已配置 ADMIN_*）
-        if: ${{ env.BOOTSTRAP_TOKEN != '' && env.ADMIN_USERNAME != '' && env.ADMIN_PASSWORD != '' }}
-        run: |
-          if [ -z "${WORKER_URL:-}" ]; then
-            echo "未解析到 Worker URL，跳过 bootstrap"
-            exit 0
-          fi
-          if [ "${#ADMIN_PASSWORD}" -lt 10 ]; then
-            echo "::warning::ADMIN_PASSWORD 不足 10 位，跳过 bootstrap"
-            exit 0
-          fi
-          DATA=$(node -e 'const u=process.env.ADMIN_USERNAME,p=process.env.ADMIN_PASSWORD; process.stdout.write(JSON.stringify({username:u,displayName:"管理员",password:p}))')
-          # 空库才成功；已有用户时接口返回 403，视为可忽略
-          HTTP=$(curl -sS -o /tmp/bootstrap.json -w "%{http_code}" -X POST "$WORKER_URL/api/bootstrap" \
-            -H "content-type: application/json" \
-            -H "x-bootstrap-token: $BOOTSTRAP_TOKEN" \
-            -d "$DATA" || echo "000")
-          echo "bootstrap HTTP $HTTP: $(cat /tmp/bootstrap.json 2>/dev/null || true)"
-          if [ "$HTTP" = "200" ]; then
-            echo "管理员已创建" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "bootstrap 未创建（可能已有用户或 token 不匹配），可忽略" >> "$GITHUB_STEP_SUMMARY"
           fi
 
   # 部署预览（PR时运行，仅构建不部署）

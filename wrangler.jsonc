@@ -26,6 +26,10 @@
   "triggers": {
     "crons": ["0 * * * *"]
   },
+  "vars": {
+    "ADMIN_USERNAME": "admin",
+    "ADMIN_PASSWORD": "admin123456"
+  },
   "observability": {
     "enabled": true
   }

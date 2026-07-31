@@ -200,6 +200,23 @@ async function upload(request, env, video) {
   return json({ url: '/' + key });
 }
 
+// 自动初始化：首次请求时若不存在 admin 用户，则用环境变量（或默认值）创建
+let adminBootstrapped = false;
+async function ensureAdmin(env) {
+  if (adminBootstrapped) return;
+  try {
+    const adminExists = await one(env.DB, "SELECT 1 FROM users WHERE role='admin'");
+    if (adminExists) { adminBootstrapped = true; return; }
+    const username = env.ADMIN_USERNAME || 'admin';
+    const password = env.ADMIN_PASSWORD || 'admin123456';
+    const salt = uuid();
+    await run(env.DB,
+      'INSERT INTO users (username,displayName,salt,passwordHash,role,maxClaims,showTutorial,createdAt) VALUES (?,?,?,?,?,?,?,?)',
+      [username, username, salt, await passwordHash(password, salt), 'admin', 999, 1, now()]);
+    adminBootstrapped = true;
+  } catch (e) { /* 初始化失败不影响正常请求 */ }
+}
+
 async function handleApi(request, env) {
   const url = new URL(request.url);
   const p = url.pathname; const method = request.method;
@@ -207,6 +224,7 @@ async function handleApi(request, env) {
   let body = {};
   if (['POST', 'PUT'].includes(method)) { try { body = await request.json(); } catch { body = {}; } }
 
+  await ensureAdmin(env);
   const me = await authUser(request, env);
   const requireUser = () => me ? null : json({ error: '未登录或登录已失效' }, 401);
   const admin = () => me?.role === 'admin';

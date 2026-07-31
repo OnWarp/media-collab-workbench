@@ -1,12 +1,13 @@
 name: Deploy Cloudflare Worker
 
-# 推送到 main 分支即自动部署；也可在 Actions 页面手动触发（workflow_dispatch）。
+# 推送到 main 自动部署；也可在 Actions 页面手动触发。
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
-# 同一时间只允许一个生产部署在跑：新触发的任务会排队，不会并发覆盖。
 concurrency:
   group: cloudflare-deploy
   cancel-in-progress: false
@@ -14,10 +15,6 @@ concurrency:
 permissions:
   contents: read
 
-# 注入 Cloudflare 凭据与可选覆盖项；以下任一缺省为空时，对应步骤会自动跳过或回退到自动创建。
-# - BOOTSTRAP_TOKEN：引导管理员用的口令
-# - D1_DATABASE_ID：可选，提供则直接使用该 D1 uuid，跳过自动创建
-# - ADMIN_USERNAME / ADMIN_PASSWORD：可选，同时配置后部署完成自动创建管理员
 env:
   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
   CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -25,12 +22,15 @@ env:
   D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
   ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
   ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+  R2_BUCKET: media-collab-uploads
+  D1_NAME: media-collab-db
 
 jobs:
-  deploy:
+  # 代码质量检查（PR和push都运行）
+  lint-and-test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout 代码
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: 安装 Node.js
@@ -38,16 +38,79 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
 
       - name: 安装根依赖（wrangler）
-        run: npm install
-
-      # worker.mjs 即 ESM 入口（仓库未启用 "type": "module"，因 server.js 是 CommonJS）。
-      # 直接用 .mjs 校验；wrangler 也会按 ESM 处理该入口，避免被误判为 CommonJS 导致部署失败。
-      - name: 语法校验 worker.mjs
         run: |
-          node --check worker.mjs
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: 语法校验 worker.mjs
+        run: node --check worker.mjs
+
+      - name: 语法校验 server.js
+        run: node --check server.js
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: TypeScript 类型检查
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: 前端单元测试
+        working-directory: frontend
+        run: npm run test
+
+      - name: 构建前端（tsc + vite）
+        working-directory: frontend
+        run: npm run build
+
+      - name: 校验前端构建产物
+        run: |
+          test -f frontend/dist/index.html || { echo "::error::缺少 frontend/dist/index.html"; exit 1; }
+          test -d frontend/dist/assets || { echo "::error::缺少 frontend/dist/assets"; exit 1; }
+
+  # 部署（仅push到main时执行）
+  deploy:
+    needs: lint-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 校验必填 Secrets
+        run: |
+          missing=0
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error::缺少仓库 Secret: CLOUDFLARE_API_TOKEN（需 Workers + D1 + R2 写权限）"
+            missing=1
+          fi
+          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::缺少仓库 Secret: CLOUDFLARE_ACCOUNT_ID"
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then exit 1; fi
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: 安装根依赖（wrangler）
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: 语法校验 worker.mjs
+        run: node --check worker.mjs
 
       - name: 安装前端依赖
         working-directory: frontend
@@ -59,65 +122,151 @@ jobs:
         run: npm run build
 
       - name: 校验前端构建产物
-        run: test -f frontend/dist/index.html || (echo "缺少 frontend/dist/index.html" && exit 1)
+        run: |
+          test -f frontend/dist/index.html || { echo "::error::缺少 frontend/dist/index.html"; exit 1; }
+          test -d frontend/dist/assets || { echo "::error::缺少 frontend/dist/assets"; exit 1; }
 
       - name: 创建 R2 存储桶（已存在则忽略）
-        run: npx wrangler r2 bucket create media-collab-uploads --config wrangler.jsonc || true
+        run: npx wrangler r2 bucket create "$R2_BUCKET" || true
 
-      - name: 准备 D1 数据库（优先用机密变量 D1_DATABASE_ID，否则自动创建）
+      - name: 准备 D1 数据库并注入 database_id
         run: |
-          if [ -n "$D1_DATABASE_ID" ]; then
-            echo "使用机密变量中的 D1_DATABASE_ID=$D1_DATABASE_ID"
+          set -euo pipefail
+          if [ -n "${D1_DATABASE_ID:-}" ]; then
             DB_ID="$D1_DATABASE_ID"
+            echo "使用 Secret D1_DATABASE_ID"
           else
-            # 幂等创建：已存在则忽略报错（不传 --config，避免占位符 __D1_DATABASE_ID__ 触发校验失败）
-            npx wrangler d1 create media-collab-db || true
-            # 无论新建还是已存在，都按名称取回 uuid
-            DB_ID=$(npx wrangler d1 list --json | jq -r '.[] | select(.name=="media-collab-db") | .uuid')
+            # 不传 --config，避免占位符 database_id 触发 wrangler 校验失败
+            npx wrangler d1 create "$D1_NAME" || true
+            DB_ID=$(npx wrangler d1 list --json | node -e '
+              const fs = require("fs");
+              const data = JSON.parse(fs.readFileSync(0, "utf8"));
+              const list = Array.isArray(data) ? data : (data.result || data.databases || []);
+              const name = process.env.D1_NAME || "media-collab-db";
+              const row = list.find(x => x.name === name || x.database_name === name);
+              if (!row) { process.stderr.write("D1 list 中未找到 " + name + "\n"); process.exit(1); }
+              process.stdout.write(row.uuid || row.id || "");
+            ')
           fi
-          echo "D1 uuid = $DB_ID"
-          if [ -z "$DB_ID" ]; then echo "未能获取 D1 database_id"; exit 1; fi
-          # 把 wrangler.jsonc 里的占位符替换成真实 id（仅修改本次流水线的临时文件，不影响仓库）
-          jq --arg id "$DB_ID" '.d1_databases[0].database_id = $id' wrangler.jsonc > wrangler.jsonc.tmp && mv wrangler.jsonc.tmp wrangler.jsonc
+          if [ -z "$DB_ID" ] || [ "$DB_ID" = "null" ]; then
+            echo "::error::未能解析 D1 database_id"
+            exit 1
+          fi
+          echo "D1 database_id = $DB_ID"
+          # 用 Node 替换占位符，兼容 JSONC 注释/格式，避免 jq 解析失败
+          node -e '
+            const fs = require("fs");
+            const id = process.argv[1];
+            let s = fs.readFileSync("wrangler.jsonc", "utf8");
+            if (!s.includes("__D1_DATABASE_ID__") && !/"database_id"\s*:/.test(s)) {
+              console.error("wrangler.jsonc 中找不到 database_id 字段");
+              process.exit(1);
+            }
+            if (s.includes("__D1_DATABASE_ID__")) {
+              s = s.split("__D1_DATABASE_ID__").join(id);
+            } else {
+              s = s.replace(/("database_id"\s*:\s*")[^"]*(")/, "$1" + id + "$2");
+            }
+            fs.writeFileSync("wrangler.jsonc", s);
+            console.log("已写入 wrangler.jsonc database_id");
+          ' "$DB_ID"
+          echo "D1_ID=$DB_ID" >> "$GITHUB_ENV"
 
-      - name: 执行 D1 数据库迁移（migrations apply，按序且只执行一次）
+      - name: 执行 D1 数据库迁移
         run: |
-          # d1 migrations apply 通过远端 d1_migrations 表跟踪已执行的迁移文件，
-          # 首次运行会把 0001（幂等）与后续迁移按文件名顺序执行并登记，之后只执行新增迁移。
-          npx wrangler d1 migrations apply media-collab-db --remote --config wrangler.jsonc
+          npx wrangler d1 migrations apply "$D1_NAME" --remote --config wrangler.jsonc
 
-      - name: 写入 BOOTSTRAP_TOKEN 密钥（仅当仓库配置了该 Secret 时执行）
+      - name: 写入 BOOTSTRAP_TOKEN 运行时密钥
         if: ${{ env.BOOTSTRAP_TOKEN != '' }}
-        run: echo "$BOOTSTRAP_TOKEN" | npx wrangler secret put BOOTSTRAP_TOKEN --config wrangler.jsonc
+        run: printf '%s' "$BOOTSTRAP_TOKEN" | npx wrangler secret put BOOTSTRAP_TOKEN --config wrangler.jsonc
 
-      - name: 检查 BOOTSTRAP_TOKEN（缺失则提示）
+      - name: 提示未配置 BOOTSTRAP_TOKEN
         if: ${{ env.BOOTSTRAP_TOKEN == '' }}
-        run: 'echo "::warning::未配置 BOOTSTRAP_TOKEN Secret，将跳过自动创建管理员；如需部署后自动建管理员，请在仓库 Secrets 中设置 BOOTSTRAP_TOKEN（建议用 openssl rand -hex 32）。"'
+        run: |
+          echo "::warning::未配置 BOOTSTRAP_TOKEN。部署仍会进行，但无法自动引导管理员。建议用 openssl rand -hex 32 生成后写入仓库 Secrets。"
 
       - name: 部署到 Cloudflare Workers
+        id: deploy
         run: |
-          # 捕获部署输出与退出码；临时关闭 -e，避免 wrangler 失败时 bash 直接终止导致真实错误被吞
           set +e
           OUT=$(npx wrangler deploy --config wrangler.jsonc 2>&1)
           CODE=$?
           echo "$OUT"
           set -e
-          echo "WORKER_URL=$(echo "$OUT" | grep -oE 'https://[a-zA-Z0-9._-]+\.workers\.dev' | head -n1)" >> "$GITHUB_ENV"
+          URL=$(echo "$OUT" | grep -oE 'https://[a-zA-Z0-9._-]+\.workers\.dev' | head -n1 || true)
+          echo "WORKER_URL=$URL" >> "$GITHUB_ENV"
+          {
+            echo "## Deploy result"
+            echo ""
+            echo "- Exit code: \`$CODE\`"
+            echo "- Worker URL: ${URL:-'(not parsed)'}"
+            echo "- D1: \`$D1_NAME\` (\`${D1_ID:-unknown}\`)"
+            echo "- R2: \`$R2_BUCKET\`"
+          } >> "$GITHUB_STEP_SUMMARY"
           if [ "$CODE" -ne 0 ]; then
-            echo "::error::wrangler deploy 失败（退出码 $CODE），详见上方输出"
+            echo "::error::wrangler deploy 失败（退出码 $CODE）"
             exit "$CODE"
           fi
 
-      - name: 自动创建管理员账号（需同时配置 BOOTSTRAP_TOKEN / ADMIN_USERNAME / ADMIN_PASSWORD）
+      - name: 自动创建管理员（空库 + 已配置 ADMIN_*）
         if: ${{ env.BOOTSTRAP_TOKEN != '' && env.ADMIN_USERNAME != '' && env.ADMIN_PASSWORD != '' }}
         run: |
-          if [ -z "$WORKER_URL" ]; then echo "未获取到 Worker URL，跳过引导"; exit 0; fi
-          if [ ${#ADMIN_PASSWORD} -lt 10 ]; then echo "ADMIN_PASSWORD 至少 10 位，跳过引导"; exit 0; fi
-          # 用 jq 构造 JSON，避免密码含特殊字符破坏请求体
-          DATA=$(jq -n --arg u "$ADMIN_USERNAME" --arg p "$ADMIN_PASSWORD" '{username:$u,displayName:"管理员",password:$p}')
-          curl -fsS -X POST "$WORKER_URL/api/bootstrap" \
+          if [ -z "${WORKER_URL:-}" ]; then
+            echo "未解析到 Worker URL，跳过 bootstrap"
+            exit 0
+          fi
+          if [ "${#ADMIN_PASSWORD}" -lt 10 ]; then
+            echo "::warning::ADMIN_PASSWORD 不足 10 位，跳过 bootstrap"
+            exit 0
+          fi
+          DATA=$(node -e 'const u=process.env.ADMIN_USERNAME,p=process.env.ADMIN_PASSWORD; process.stdout.write(JSON.stringify({username:u,displayName:"管理员",password:p}))')
+          # 空库才成功；已有用户时接口返回 403，视为可忽略
+          HTTP=$(curl -sS -o /tmp/bootstrap.json -w "%{http_code}" -X POST "$WORKER_URL/api/bootstrap" \
             -H "content-type: application/json" \
             -H "x-bootstrap-token: $BOOTSTRAP_TOKEN" \
-            -d "$DATA" \
-            && echo "管理员账号已自动创建" \
-            || echo "引导未执行（可能已有用户 / 网络问题），可忽略"
+            -d "$DATA" || echo "000")
+          echo "bootstrap HTTP $HTTP: $(cat /tmp/bootstrap.json 2>/dev/null || true)"
+          if [ "$HTTP" = "200" ]; then
+            echo "管理员已创建" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "bootstrap 未创建（可能已有用户或 token 不匹配），可忽略" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # 部署预览（PR时运行，仅构建不部署）
+  preview:
+    needs: lint-and-test
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: 构建前端
+        working-directory: frontend
+        run: npm run build
+
+      - name: 校验构建产物
+        run: |
+          test -f frontend/dist/index.html || { echo "::error::缺少 frontend/dist/index.html"; exit 1; }
+          test -d frontend/dist/assets || { echo "::error::缺少 frontend/dist/assets"; exit 1; }
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          retention-days: 7

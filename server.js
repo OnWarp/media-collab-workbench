@@ -16,6 +16,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 // ===================== 数据层 =====================
 let db = { users: [], topics: [], comments: [], materials: [], messages: [], logs: [], sessions: {}, weeklySettlements: [], announcements: [], messageRecycle: [] };
 const UPLOAD_DIR = path.join(PUBLIC_DIR, 'uploads');
+const idCounters = {};
 
 function loadDB() {
   if (fs.existsSync(DB_FILE)) {
@@ -29,11 +30,24 @@ function loadDB() {
 function saveDB() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+  const tmpFile = DB_FILE + '.tmp.' + Date.now();
+  try {
+    fs.writeFileSync(tmpFile, JSON.stringify(db, null, 2));
+    fs.renameSync(tmpFile, DB_FILE);
+  } catch (e) {
+    try { fs.unlinkSync(tmpFile); } catch {}
+    throw e;
+  }
 }
 function nextId(key) {
+  if (idCounters[key] !== undefined) {
+    idCounters[key]++;
+    return idCounters[key];
+  }
   const arr = db[key] || [];
-  return arr.length ? Math.max(...arr.map(x => x.id || 0)) + 1 : 1;
+  idCounters[key] = arr.length ? Math.max(...arr.map(x => x.id || 0)) : 0;
+  idCounters[key]++;
+  return idCounters[key];
 }
 
 // ===================== 工具函数 =====================
@@ -56,6 +70,29 @@ function makeUser(username, displayName, password, role) {
 }
 function genToken() { return crypto.randomBytes(32).toString('hex'); }
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+// 登录速率限制
+const loginAttempts = new Map();
+const RATE_LIMIT_WINDOW = 15 * 60 * 1000; // 15分钟窗口
+const RATE_LIMIT_MAX = 5; // 最大尝试次数
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const attempts = loginAttempts.get(ip) || [];
+  const recentAttempts = attempts.filter(t => now - t < RATE_LIMIT_WINDOW);
+  loginAttempts.set(ip, recentAttempts);
+  return recentAttempts.length < RATE_LIMIT_MAX;
+}
+
+function recordLoginAttempt(ip) {
+  const attempts = loginAttempts.get(ip) || [];
+  attempts.push(Date.now());
+  loginAttempts.set(ip, attempts);
+}
+
+function clearLoginAttempts(ip) {
+  loginAttempts.delete(ip);
+}
 
 function addLog(topicId, userId, action, detail) {
   db.logs.push({ id: nextId('logs'), topicId, userId, action, detail: detail || '', createdAt: Date.now() });
@@ -91,6 +128,15 @@ function parseSeries(input) {
   if (Array.isArray(input)) arr = input;
   else if (typeof input === 'string') arr = input.split(/[#\s]+/).map(s => s.trim());
   return [...new Set(arr.filter(Boolean))].slice(0, 12);
+}
+
+// CSV转义函数（防止CSV注入）
+function escapeCSV(value) {
+  const str = String(value || '');
+  if (/^[=+\-@\t\r]/.test(str)) {
+    return "'" + str.replace(/"/g, '""');
+  }
+  return str.replace(/"/g, '""');
 }
 
 // 外链校验：只要「看起来是个链接」即可（宽松校验）
@@ -308,9 +354,17 @@ async function handle(req, res) {
 
     // 登录 / 注册（无需鉴权）
     if (p === '/api/login' && method === 'POST') {
+      const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+      if (!checkRateLimit(ip)) {
+        return json(res, 429, { error: '登录尝试过于频繁，请15分钟后重试' });
+      }
       const { username, password } = body;
       const user = db.users.find(x => x.username === username);
-      if (!user || !passwordMatches(user, password)) return json(res, 401, { error: '用户名或密码错误' });
+      if (!user || !passwordMatches(user, password)) {
+        recordLoginAttempt(ip);
+        return json(res, 401, { error: '用户名或密码错误' });
+      }
+      clearLoginAttempt(ip);
       if (user.passwordHashAlgo !== 'scrypt') { user.passwordHash = hashPassword(password, user.salt); user.passwordHashAlgo = 'scrypt'; }
       const token = genToken();
       db.sessions[token] = { userId: user.id, expiresAt: Date.now() + SESSION_TTL_MS };
@@ -320,6 +374,12 @@ async function handle(req, res) {
     if (p === '/api/register' && method === 'POST') {
       const { username, password, displayName } = body;
       if (!username || !password) return json(res, 400, { error: '用户名和密码必填' });
+      if (username.length < 3 || username.length > 32 || !/^[A-Za-z0-9_-]+$/.test(username)) {
+        return json(res, 400, { error: '用户名需3-32位，仅支持字母、数字、下划线、连字符' });
+      }
+      if (password.length < 10) {
+        return json(res, 400, { error: '密码至少需要10位' });
+      }
       if (db.users.find(x => x.username === username)) return json(res, 400, { error: '用户名已存在' });
       const user = makeUser(username, displayName || username, password, 'member');
       db.users.push(user);
@@ -410,6 +470,12 @@ async function handle(req, res) {
       if (me.role !== 'admin') return json(res, 403, { error: '无权限' });
       const { username, password, displayName, maxClaims } = body;
       if (!username || !password) return json(res, 400, { error: '用户名和密码必填' });
+      if (username.length < 3 || username.length > 32 || !/^[A-Za-z0-9_-]+$/.test(username)) {
+        return json(res, 400, { error: '用户名需3-32位，仅支持字母、数字、下划线、连字符' });
+      }
+      if (password.length < 10) {
+        return json(res, 400, { error: '密码至少需要10位' });
+      }
       if (db.users.find(x => x.username === username)) return json(res, 400, { error: '用户名已存在' });
       const user = makeUser(username, displayName || username, password, 'member');
       if (maxClaims) user.maxClaims = Math.max(1, parseInt(maxClaims, 10) || 10);
@@ -1030,8 +1096,8 @@ async function handle(req, res) {
       if (wid) { const rec = db.weeklySettlements.find(r => String(r.id) === wid); settled = rec ? settled.filter(t => rec.topicIds.includes(t.id)) : []; }
       const header = '选题ID,选题标题,类型,认领人,结算金额,结算明细,完结时间,结款时间\n';
       const rows = settled.map(t => [
-        t.id, `"${(t.title || '').replace(/"/g, '""')}"`, WORKTYPE_LABELS[t.workType] || t.workType, userName(t.claimerId),
-        t.settlementAmount || 0, `"${(t.settlementDetail || '').replace(/"/g, '""')}"`,
+        t.id, `"${escapeCSV(t.title || '')}"`, WORKTYPE_LABELS[t.workType] || t.workType, userName(t.claimerId),
+        t.settlementAmount || 0, `"${escapeCSV(t.settlementDetail || '')}"`,
         t.updatedAt ? new Date(t.updatedAt).toISOString() : '', t.settledAt ? new Date(t.settledAt).toISOString() : ''
       ].join(',')).join('\n');
       res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="bills.csv"' });

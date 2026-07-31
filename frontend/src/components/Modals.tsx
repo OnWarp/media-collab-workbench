@@ -94,17 +94,19 @@ function TopicFormBase({
 }) {
   const { toast } = useApp();
   const [s, setS] = useState<TopicFormState>({
-    title: (initial as any)?.title || '',
-    intro: (initial as any)?.intro || '',
-    series: ((initial as any)?.series || []).join(' '),
-    refs: ((initial as any)?.referenceLinks || []).join('\n'),
-    copy: (initial as any)?.copyText || '',
-    media: (initial as any)?.mediaLinks || [],
-    workType: (initial as any)?.workType || '',
-    deadline: ((initial as any)?.deadline || '').replace(' ', 'T'),
+    title: initial?.title || '',
+    intro: initial?.intro || '',
+    series: (initial?.series || []).join(' '),
+    refs: (initial?.referenceLinks || []).join('\n'),
+    copy: initial?.copyText || '',
+    media: initial?.mediaLinks || [],
+    workType: initial?.workType || '',
+    deadline: (initial?.deadline || '').replace(' ', 'T'),
   });
   const [linkForced, setLinkForced] = useState(false);
   const [warn, setWarn] = useState('');
+  const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
+  const [mediaInputValue, setMediaInputValue] = useState('');
 
   const submit = async () => {
     const body = readForm(s);
@@ -172,29 +174,28 @@ function TopicFormBase({
         <div className="repeat-row">
           <Select
             aria-label="类型"
-            value={'image'}
-            onValueChange={() => {}}
+            value={mediaType}
+            onValueChange={(v) => setMediaType(v as 'image' | 'video')}
             items={{ image: '图片', video: '视频' }}
           />
           <Input
             className="grow"
             placeholder="外链 URL"
+            value={mediaInputValue}
+            onChange={(e) => setMediaInputValue(e.target.value)}
             onKeyDown={(e) => {
-              const v = (e.target as HTMLInputElement).value.trim();
-              if ((e as React.KeyboardEvent).key === 'Enter' && v) {
-                setS({ ...s, media: [...s.media, { type: 'image', url: v }] });
-                (e.target as HTMLInputElement).value = '';
+              if ((e as React.KeyboardEvent).key === 'Enter' && mediaInputValue.trim()) {
+                setS({ ...s, media: [...s.media, { type: mediaType, url: mediaInputValue.trim() }] });
+                setMediaInputValue('');
               }
             }}
           />
           <Button
             size="sm"
             onClick={() => {
-              const inp = document.querySelector('.repeat-row input') as HTMLInputElement | null;
-              const v = inp?.value.trim();
-              if (v) {
-                setS({ ...s, media: [...s.media, { type: 'image', url: v }] });
-                if (inp) inp.value = '';
+              if (mediaInputValue.trim()) {
+                setS({ ...s, media: [...s.media, { type: mediaType, url: mediaInputValue.trim() }] });
+                setMediaInputValue('');
               }
             }}
           >
@@ -248,7 +249,13 @@ function EditTopic({ id, onClose }: { id: number; onClose: () => void }) {
   const [init, setInit] = useState<TopicDetailT | null>(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    topicApi.get(id).then(setInit).finally(() => setLoading(false));
+    let cancelled = false;
+    topicApi.get(id).then(setInit).catch((e) => {
+      if (!cancelled) toast(e instanceof Error ? e.message : '加载失败');
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
   }, [id]);
   if (loading || !init) return <Modal title="修改选题" onClose={onClose}><Loading /></Modal>;
   return (
@@ -272,7 +279,13 @@ function ReviewModal({ id, onClose }: { id: number; onClose: () => void }) {
   const [t, setT] = useState<TopicDetailT | null>(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    topicApi.get(id).then(setT).finally(() => setLoading(false));
+    let cancelled = false;
+    topicApi.get(id).then(setT).catch((e) => {
+      if (!cancelled) toast(e instanceof Error ? e.message : '加载失败');
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
   }, [id]);
 
   if (loading || !t) return <Modal title="审核" onClose={onClose}><Loading /></Modal>;
@@ -366,14 +379,23 @@ function SettleModal({ id, onClose }: { id: number; onClose: () => void }) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     topicApi
       .get(id)
       .then((d) => {
-        setT(d);
-        setAmount(String(d.displayAmount || ''));
-        setEvidence(d.settlementEvidence || []);
+        if (!cancelled) {
+          setT(d);
+          setAmount(String(d.displayAmount || ''));
+          setEvidence(d.settlementEvidence || []);
+        }
       })
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (!cancelled) toast(e instanceof Error ? e.message : '加载失败');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
   }, [id]);
 
   if (loading || !t) return <Modal title="录入结算" onClose={onClose}><Loading /></Modal>;
@@ -530,17 +552,24 @@ function TrafficModal({ id, onClose }: { id: number; onClose: () => void }) {
   const [metric, setMetric] = useState<'views' | 'likes' | 'favorites'>('views');
 
   useEffect(() => {
+    let cancelled = false;
     topicApi.get(id).then((d) => {
-      setT(d);
-      const init: EditableDay[] = (d.trafficDays || []).map((x) => ({
-        date: x.date,
-        douyin: { ...x.douyin },
-        kuaishou: { ...x.kuaishou },
-        xiaohongshu: { ...x.xiaohongshu },
-      }));
-      setDays(init);
-      setLoading(false);
+      if (!cancelled) {
+        setT(d);
+        const init: EditableDay[] = (d.trafficDays || []).map((x) => ({
+          date: x.date,
+          douyin: { ...x.douyin },
+          kuaishou: { ...x.kuaishou },
+          xiaohongshu: { ...x.xiaohongshu },
+        }));
+        setDays(init);
+      }
+    }).catch((e) => {
+      if (!cancelled) toast(e instanceof Error ? e.message : '加载失败');
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
     });
+    return () => { cancelled = true; };
   }, [id]);
 
   if (loading || !t) return <Modal title="填报视频流量" onClose={onClose}><Loading /></Modal>;
@@ -638,11 +667,18 @@ function BoardEdit({ onClose }: { onClose: () => void }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     boardApi.get().then((b) => {
-      setNotice(b.notice || '');
-      setVideos(b.referenceVideos || []);
-      setLoading(false);
+      if (!cancelled) {
+        setNotice(b.notice || '');
+        setVideos(b.referenceVideos || []);
+      }
+    }).catch((e) => {
+      if (!cancelled) toast(e instanceof Error ? e.message : '加载失败');
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
     });
+    return () => { cancelled = true; };
   }, []);
 
   if (loading) return <Modal title="编辑公告栏" onClose={onClose}><Loading /></Modal>;

@@ -70,8 +70,10 @@ export function TopicDetail({ id, onClose }: { id: number; onClose: () => void }
       await reload();
       refreshView();
       refreshPending();
+      return true;
     } catch (e) {
       toast(e instanceof Error ? e.message : '操作失败');
+      return false;
     }
   };
 
@@ -98,7 +100,10 @@ export function TopicDetail({ id, onClose }: { id: number; onClose: () => void }
       );
     if (isAdmin)
       actions.push(
-        <Button key="purge" variant="destructive" onClick={() => act(() => topicApi.purge(id), '已永久删除').then(onClose)}>
+        <Button key="purge" variant="destructive" onClick={async () => {
+          const success = await act(() => topicApi.purge(id), '已永久删除');
+          if (success) onClose();
+        }}>
           永久删除
         </Button>
       );

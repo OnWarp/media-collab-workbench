@@ -1,17 +1,8 @@
 import { Badge, Loader } from '@cloudflare/kumo';
-import { STAGE_LABELS, stageOrder } from '../api';
+import { STAGE_LABELS, stageOrder, fmtTime, fmtMoney } from '../api';
 import type { Topic, TopicStatus } from '../types';
 
-export function fmtTime(ts?: number | null): string {
-  if (!ts) return '';
-  const d = new Date(ts);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getMonth() + 1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-export function fmtMoney(n: number | string): string {
-  return '¥' + Number(n || 0).toFixed(2);
-}
+export { fmtTime, fmtMoney };
 
 const STATUS_VARIANT: Record<TopicStatus, 'orange' | 'purple' | 'green'> = {
   pending: 'orange',

@@ -137,16 +137,31 @@ curl -X POST https://media-collab-workbench.<子域>.workers.dev/api/bootstrap \
 
 ## 八、GitHub Actions 自动部署（推到 main 即上线）
 
-推送（或合并）到 `main` 分支会自动触发 `.github/workflows/deploy-worker.yml`，无需手动登录服务器。该流水线一次完成：
+推送（或合并）到 `main` 分支会自动触发 `.github/workflows/deploy-worker.yml`，无需手动登录服务器。
 
-1. `node --check worker.mjs` 语法校验（ESM 入口；仓库因 server.js 为 CommonJS 未启用 type:module，worker 入口用 .mjs 强制 ESM）
-2. 安装并构建前端：`frontend/` 下 `npm ci && npm run build`（tsc 类型检查 + vite 构建 → `frontend/dist`），并校验产物存在
-3. 创建 R2 桶 `media-collab-uploads`（已存在则忽略）
-4. 准备 D1 数据库 `media-collab-db`：若配置了机密变量 `D1_DATABASE_ID` 则直接用它，否则自动创建并按名称取回 `database_id` 写回本次流水线的 `wrangler.jsonc`
-5. `wrangler d1 migrations apply --remote`：按文件名顺序执行 `migrations/` 下的全部迁移（`d1_migrations` 表跟踪，只执行未跑过的）
-6. 写入运行密钥 `BOOTSTRAP_TOKEN`（仓库里配了该 Secret 才执行）
-7. `wrangler deploy --config wrangler.jsonc` 正式部署，并捕获 Worker URL
-8. 若同时配置了 `BOOTSTRAP_TOKEN` + `ADMIN_USERNAME` + `ADMIN_PASSWORD`，自动调用 `/api/bootstrap` 创建管理员（仅空库生效）
+### 8.0 CI 流程概览
+
+流水线分为两个阶段：
+
+**阶段 1：代码质量检查（lint-and-test）** — PR 和 push 都运行
+1. `node --check worker.mjs` 语法校验
+2. `node --check server.js` 语法校验
+3. TypeScript 类型检查（`npx tsc --noEmit`）
+4. 前端单元测试（`npm run test`）
+5. 构建前端（`tsc + vite build`）
+6. 校验构建产物
+
+**阶段 2：部署（deploy）** — 仅 push 到 main 时执行
+1. 创建 R2 桶 `media-collab-uploads`（已存在则忽略）
+2. 准备 D1 数据库 `media-collab-db`：若配置了机密变量 `D1_DATABASE_ID` 则直接用它，否则自动创建并按名称取回 `database_id` 写回本次流水线的 `wrangler.jsonc`
+3. `wrangler d1 migrations apply --remote`：按文件名顺序执行 `migrations/` 下的全部迁移（`d1_migrations` 表跟踪，只执行未跑过的）
+4. 写入运行密钥 `BOOTSTRAP_TOKEN`（仓库里配了该 Secret 才执行）
+5. `wrangler deploy --config wrangler.jsonc` 正式部署，并捕获 Worker URL
+6. 若同时配置了 `BOOTSTRAP_TOKEN` + `ADMIN_USERNAME` + `ADMIN_PASSWORD`，自动调用 `/api/bootstrap` 创建管理员（仅空库生效）
+
+**阶段 3：PR 预览（preview）** — 仅 PR 时执行
+1. 构建前端
+2. 上传构建产物供下载
 
 ### 8.1 需要的仓库密钥
 

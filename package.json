@@ -1,6 +1,6 @@
 {
   "name": "media-collab-workbench",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "小型自媒体内容协作工作台：选题进度跟踪 + 作品验收结算一体化后台",
   "main": "server.js",
   "scripts": {
@@ -8,10 +8,14 @@
     "build": "npm --prefix frontend run build",
     "dev:frontend": "npm --prefix frontend run dev",
     "dev:worker": "wrangler dev",
-    "deploy:worker": "wrangler deploy"
+    "deploy:worker": "wrangler deploy",
+    "test": "npm --prefix frontend run test",
+    "test:watch": "npm --prefix frontend run test:watch",
+    "lint": "node --check server.js && node --check worker.mjs",
+    "typecheck": "npm --prefix frontend run typecheck"
   },
   "engines": {
-    "node": ">=16"
+    "node": ">=18"
   },
   "devDependencies": {
     "wrangler": "^4"

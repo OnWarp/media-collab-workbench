@@ -160,8 +160,34 @@ jobs:
           ' "$DB_ID"
           echo "D1_ID=$DB_ID" >> "$GITHUB_ENV"
 
-      - name: 执行 D1 数据库迁移
+      - name: 检查并修复 D1 数据库
+        id: d1repair
         run: |
+          set +e
+          npx wrangler d1 execute "$D1_NAME" --remote --config wrangler.jsonc --command "SELECT 1 FROM users LIMIT 1" >/dev/null 2>&1
+          HEALTH=$?
+          set -e
+          if [ "$HEALTH" -ne 0 ]; then
+            echo "::warning::D1 表结构异常，执行修复（删除并重建所有表）"
+            npx wrangler d1 execute "$D1_NAME" --remote --config wrangler.jsonc --command "
+              DROP TABLE IF EXISTS logs;
+              DROP TABLE IF EXISTS messages;
+              DROP TABLE IF EXISTS materials;
+              DROP TABLE IF EXISTS comments;
+              DROP TABLE IF EXISTS topics;
+              DROP TABLE IF EXISTS sessions;
+              DROP TABLE IF EXISTS users;
+              DROP TABLE IF EXISTS weeklySettlements;
+              DROP TABLE IF EXISTS announcements;
+            "
+            for f in migrations/*.sql; do
+              echo "执行迁移: $f"
+              npx wrangler d1 execute "$D1_NAME" --remote --config wrangler.jsonc --file="$f"
+            done
+          else
+            echo "D1 表结构正常，无需修复"
+          fi
+          # 正常应用迁移（处理新迁移文件）
           npx wrangler d1 migrations apply "$D1_NAME" --remote --config wrangler.jsonc
 
       - name: 写入 BOOTSTRAP_TOKEN 运行时密钥
@@ -197,6 +223,16 @@ jobs:
           if [ "$CODE" -ne 0 ]; then
             echo "::error::wrangler deploy 失败（退出码 $CODE）"
             exit "$CODE"
+          fi
+
+      - name: 触发管理员自动初始化
+        run: |
+          if [ -n "${WORKER_URL:-}" ]; then
+            echo "触发 $WORKER_URL/api/auth-check 以创建默认管理员（如不存在）"
+            HTTP=$(curl -sS -o /dev/null -w "%{http_code}" "$WORKER_URL/api/auth-check" || echo "000")
+            echo "auth-check HTTP $HTTP"
+          else
+            echo "未解析到 Worker URL，跳过管理员初始化触发"
           fi
 
   # 部署预览（PR时运行，仅构建不部署）

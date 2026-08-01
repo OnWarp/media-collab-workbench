@@ -161,7 +161,10 @@ export default {
     if (url.pathname.startsWith('/api/')) {
       if (url.pathname === '/api/pending' && ctx) ctx.waitUntil(cleanup(env));
       try { return await handleApi(request, env); }
-      catch (e) { return json({ error: '服务器内部错误：' + (e && e.message || e) }, 500); }
+      catch (e) {
+        console.error('[worker error]', e);
+        return json({ error: '服务器内部错误：' + (e && e.message || e) }, 500);
+      }
     }
     if (url.pathname.startsWith('/uploads/')) {
       const object = await env.UPLOADS.get(url.pathname.slice(1));
@@ -214,7 +217,10 @@ async function ensureAdmin(env) {
       'INSERT INTO users (username,displayName,salt,passwordHash,role,maxClaims,showTutorial,createdAt) VALUES (?,?,?,?,?,?,?,?)',
       [username, username, salt, await passwordHash(password, salt), 'admin', 999, 1, now()]);
     adminBootstrapped = true;
-  } catch (e) { /* 初始化失败不影响正常请求 */ }
+    console.log(`[ensureAdmin] 已创建管理员: ${username}`);
+  } catch (e) {
+    console.error('[ensureAdmin] 自动创建管理员失败：', e);
+  }
 }
 
 async function handleApi(request, env) {
@@ -265,7 +271,9 @@ async function handleApi(request, env) {
     if (await one(env.DB, 'SELECT 1 FROM users WHERE username=?', [username])) return json({ error: '用户名已存在' }, 409);
     const salt = uuid();
     const res = await run(env.DB, 'INSERT INTO users (username,displayName,salt,passwordHash,role,maxClaims,showTutorial,createdAt) VALUES (?,?,?,?,?,?,?,?)', [username, String(body.displayName || username).slice(0, 80), salt, await passwordHash(password, salt), 'member', 10, 1, now()]);
+    if (!res?.meta?.last_row_id) throw new Error('用户创建后无法获取 last_row_id，可能 users 表结构不正确');
     const u = await one(env.DB, 'SELECT * FROM users WHERE id=?', [res.meta.last_row_id]);
+    if (!u) throw new Error('用户创建后无法读取，可能 users 表结构不正确');
     const tk = uuid();
     await run(env.DB, 'INSERT INTO sessions (token,userId,expiresAt) VALUES (?,?,?)', [tk, u.id, now() + 7 * DAY]);
     return json({ token: tk, user: publicUser(u) });

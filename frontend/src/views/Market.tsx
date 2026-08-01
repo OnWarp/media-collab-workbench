@@ -13,14 +13,20 @@ export function Market() {
   const [series, setSeries] = useState<SeriesItem[]>([]);
   const [seriesFilter, setSeriesFilter] = useState<string | null>(null);
   const [keyword, setKeyword] = useState('');
+  const [debouncedKeyword, setDebouncedKeyword] = useState('');
   const [sort, setSort] = useState('updated');
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedKeyword(keyword), 300);
+    return () => clearTimeout(t);
+  }, [keyword]);
 
   const loadAll = async () => {
     setLoading(true);
     try {
       const q: TopicQuery = {};
-      if (keyword) q.keyword = keyword;
+      if (debouncedKeyword) q.keyword = debouncedKeyword;
       if (seriesFilter) q.series = seriesFilter;
       if (sort) q.sort = sort;
       const list = await topicApi.list(q);
@@ -46,7 +52,8 @@ export function Market() {
 
   useEffect(() => {
     loadAll();
-  }, [refreshView, keyword, seriesFilter, sort]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshView, debouncedKeyword, seriesFilter, sort]);
 
   return (
     <div>

@@ -444,6 +444,23 @@ async function handle(req, res) {
       return json(res, 200, { ok: true });
     }
 
+    // 修改当前用户密码
+    if (p === '/api/me/password' && method === 'PUT') {
+      const { oldPassword, newPassword } = body;
+      if (!oldPassword || !newPassword) return json(res, 400, { error: '缺少原密码或新密码' });
+      if (hashPassword(String(oldPassword), me.salt) !== me.passwordHash) return json(res, 400, { error: '原密码错误' });
+      if (String(newPassword).length < 10) return json(res, 400, { error: '新密码至少 10 位' });
+      const salt = crypto.randomBytes(16).toString('hex');
+      me.salt = salt;
+      me.passwordHash = hashPassword(String(newPassword), salt);
+      const token = getToken(req);
+      for (const tk of Object.keys(db.sessions)) {
+        if (db.sessions[tk].userId === me.id && tk !== token) delete db.sessions[tk];
+      }
+      saveDB();
+      return json(res, 200, { ok: true });
+    }
+
     // 图片上传（结算证据等）：接收 base64 dataURL，落盘到 public/uploads
     if (p === '/api/upload' && method === 'POST') {
       const { name, data } = body;
@@ -465,8 +482,8 @@ async function handle(req, res) {
       const { file } = body;
       if (!file) return json(res, 400, { error: '未接收到视频文件' });
       const ext = (file.filename.split('.').pop() || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      const allowed = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v', 'ogg', 'mpg', 'mpeg'];
-      if (!allowed.includes(ext)) return json(res, 400, { error: '仅支持视频格式：mp4 / webm / mov / avi / mkv 等' });
+      const allowed = ['mp4', 'webm', 'mov', 'm4v'];
+      if (!allowed.includes(ext)) return json(res, 400, { error: '仅支持 mp4、webm、mov、m4v' });
       if (file.buffer.length > 25 * 1024 * 1024) return json(res, 400, { error: '视频过大，上限 25MB' });
       const safeName = (Date.now() + '-' + crypto.randomBytes(4).toString('hex') + '.' + ext).replace(/[^a-zA-Z0-9.\-]/g, '');
       const dir = path.join(UPLOAD_DIR, 'videos');
@@ -1130,9 +1147,14 @@ async function handle(req, res) {
       if (wid) { const rec = db.weeklySettlements.find(r => String(r.id) === wid); settled = rec ? settled.filter(t => rec.topicIds.includes(t.id)) : []; }
       const header = '选题ID,选题标题,类型,认领人,结算金额,结算明细,完结时间,结款时间\n';
       const rows = settled.map(t => [
-        t.id, `"${escapeCSV(t.title || '')}"`, WORKTYPE_LABELS[t.workType] || t.workType, userName(t.claimerId),
-        t.settlementAmount || 0, `"${escapeCSV(t.settlementDetail || '')}"`,
-        t.updatedAt ? new Date(t.updatedAt).toISOString() : '', t.settledAt ? new Date(t.settledAt).toISOString() : ''
+        t.id,
+        `"${escapeCSV(t.title || '')}"`,
+        `"${escapeCSV(WORKTYPE_LABELS[t.workType] || t.workType || '')}"`,
+        `"${escapeCSV(userName(t.claimerId))}"`,
+        t.settlementAmount || 0,
+        `"${escapeCSV(t.settlementDetail || '')}"`,
+        `"${escapeCSV(t.updatedAt ? new Date(t.updatedAt).toISOString() : '')}"`,
+        `"${escapeCSV(t.settledAt ? new Date(t.settledAt).toISOString() : '')}"`
       ].join(',')).join('\n');
       res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="bills.csv"' });
       return res.end('﻿' + header + rows);

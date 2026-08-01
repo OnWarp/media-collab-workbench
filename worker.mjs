@@ -376,6 +376,9 @@ async function handleApi(request, env) {
     const title = String(body.title || '').trim(); if (!title) return json({ error: '标题必填' }, 400);
     const refs = (Array.isArray(body.referenceLinks) ? body.referenceLinks : []).map(String).filter(Boolean).slice(0, 30);
     const media = (Array.isArray(body.mediaLinks) ? body.mediaLinks : []).filter(m => m && m.url).slice(0, 30);
+    for (const r of refs) if (!safeUrl(r)) return json({ error: `参考链接格式不合法：${r}` }, 400);
+    for (const m of media) if (!safeUrl(m.url)) return json({ error: '图片/视频外链格式不合法' }, 400);
+    if (body.deadline && !/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?/.test(body.deadline)) return json({ error: '截止时间格式不合法' }, 400);
     const series = Array.isArray(body.series) ? body.series : String(body.series || '').split(/[#\s]+/).filter(Boolean);
     const res = await run(env.DB, 'INSERT INTO topics (title,intro,referenceLinks,mediaLinks,copyText,workType,series,deadline,status,stage,createdBy,claimerId,createdAt,updatedAt,settlementStatus,favoritedBy,rejectedNotes,settlementEvidence) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
       [title, String(body.intro || '').slice(0, 10000), jset(refs), jset(media), String(body.copyText || ''), ['full', 'copywriting'].includes(body.workType) ? body.workType : null, jset(series.slice(0, 12)), body.deadline || null, 'pending', 'confirm', me.id, null, now(), now(), 'unsettled', jset([]), jset([]), jset([])]);
@@ -406,11 +409,23 @@ async function handleApi(request, env) {
       if (!admin() && t.createdBy !== me.id) return json({ error: '无权限' }, 403);
       if (t.status === 'finished' && !admin()) return json({ error: '已完结选题不可修改' }, 400);
       const sets = []; const vals = [];
-      for (const k of ['title', 'intro', 'copyText', 'deadline']) if (body[k] !== undefined) { sets.push(`${k}=?`); vals.push(String(body[k] || '')); }
+      for (const k of ['title', 'intro', 'copyText']) if (body[k] !== undefined) { sets.push(`${k}=?`); vals.push(String(body[k] || '')); }
+      if (body.deadline !== undefined) {
+        if (body.deadline && !/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?/.test(body.deadline)) return json({ error: '截止时间格式不合法' }, 400);
+        sets.push('deadline=?'); vals.push(body.deadline || null);
+      }
       if (body.workType !== undefined) { sets.push('workType=?'); vals.push(['full', 'copywriting'].includes(body.workType) ? body.workType : null); }
       if (body.series !== undefined) { sets.push('series=?'); vals.push(jset((Array.isArray(body.series) ? body.series : String(body.series).split(/[#\s]+/).filter(Boolean)).slice(0, 12))); }
-      if (body.referenceLinks !== undefined) { sets.push('referenceLinks=?'); vals.push(jset(body.referenceLinks.map(String).filter(Boolean).slice(0, 30))); }
-      if (body.mediaLinks !== undefined) { sets.push('mediaLinks=?'); vals.push(jset(body.mediaLinks.filter(m => m && m.url).slice(0, 30))); }
+      if (body.referenceLinks !== undefined) {
+        const refs = body.referenceLinks.map(String).filter(Boolean).slice(0, 30);
+        for (const r of refs) if (!safeUrl(r)) return json({ error: `参考链接格式不合法：${r}` }, 400);
+        sets.push('referenceLinks=?'); vals.push(jset(refs));
+      }
+      if (body.mediaLinks !== undefined) {
+        const media = body.mediaLinks.filter(m => m && m.url).slice(0, 30);
+        for (const m of media) if (!safeUrl(m.url)) return json({ error: '图片/视频外链格式不合法' }, 400);
+        sets.push('mediaLinks=?'); vals.push(jset(media));
+      }
       sets.push('updatedAt=?'); vals.push(now()); vals.push(tid);
       await run(env.DB, `UPDATE topics SET ${sets.join(',')} WHERE id=?`, vals);
       await log(tid, '修改选题');
@@ -467,15 +482,19 @@ async function handleApi(request, env) {
         await run(env.DB, `UPDATE topics SET status='in_progress', stage=?, rejectedNotes=?, updatedAt=? WHERE id=?`, [t.reviewStage, jset(notes), now(), tid]);
         await log(tid, '驳回返修', String(body.note || ''));
         await notify(t.claimerId, tid, `↩️ 选题《${t.title}》被驳回返修：${String(body.note || '').slice(0, 200)}`, 'reject');
-      } else if (t.reviewStage === 'copywriting' && t.workType === 'full') {
-        await run(env.DB, "UPDATE topics SET status='in_progress', stage='video', updatedAt=? WHERE id=?", [now(), tid]);
-        await log(tid, '文案审核通过', '进入视频制作阶段');
-        await notify(t.claimerId, tid, `✅ 选题《${t.title}》文案审核通过，请继续制作视频`, 'review');
+      } else if (body.action === 'approve') {
+        if (t.reviewStage === 'copywriting' && t.workType === 'full') {
+          await run(env.DB, "UPDATE topics SET status='in_progress', stage='video', updatedAt=? WHERE id=?", [now(), tid]);
+          await log(tid, '文案审核通过', '进入视频制作阶段');
+          await notify(t.claimerId, tid, `✅ 选题《${t.title}》文案审核通过，请继续制作视频`, 'review');
+        } else {
+          const isVideo = t.reviewStage === 'video';
+          await run(env.DB, `UPDATE topics SET status='finished', stage='done', updatedAt=?${isVideo ? ', trafficDueAt=?' : ''} WHERE id=?`, isVideo ? [now(), now() + 7 * DAY, tid] : [now(), tid]);
+          await log(tid, '审核通过', '选题完结');
+          await notify(t.claimerId, tid, `✅ 选题《${t.title}》审核通过并完结${isVideo ? '，请 7 天内填报三平台流量数据' : ''}，等待结算`, 'review');
+        }
       } else {
-        const isVideo = t.reviewStage === 'video';
-        await run(env.DB, `UPDATE topics SET status='finished', stage='done', updatedAt=?${isVideo ? ', trafficDueAt=?' : ''} WHERE id=?`, isVideo ? [now(), now() + 7 * DAY, tid] : [now(), tid]);
-        await log(tid, '审核通过', '选题完结');
-        await notify(t.claimerId, tid, `✅ 选题《${t.title}》审核通过并完结${isVideo ? '，请 7 天内填报三平台流量数据' : ''}，等待结算`, 'review');
+        return json({ error: 'action 必须为 approve 或 reject' }, 400);
       }
       return json(await view());
     }
@@ -572,7 +591,7 @@ async function handleApi(request, env) {
   const deadline = p.match(/^\/api\/topics\/(\d+)\/deadline$/);
   if (deadline && method === 'POST') {
     const tid = Number(deadline[1]); const t = await getTopic(tid); if (!t) return json({ error: '选题不存在' }, 404);
-    if (!admin() && t.createdBy !== me.id && t.claimerId !== me.id) return json({ error: '无权限' }, 403);
+    if (body.deadline && !/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?/.test(body.deadline)) return json({ error: '截止时间格式不合法' }, 400);
     await run(env.DB, 'UPDATE topics SET deadline=?, updatedAt=? WHERE id=?', [body.deadline || null, now(), tid]);
     await log(tid, '设置截止时间', body.deadline || '（清除）');
     return json(topicView(await getTopic(tid), umap));

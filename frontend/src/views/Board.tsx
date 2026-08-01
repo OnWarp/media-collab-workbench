@@ -16,13 +16,14 @@ export function Board() {
   const [loading, setLoading] = useState(true);
   const [favOnly, setFavOnly] = useState(false);
   const [filters, setFilters] = useState({
-    keyword: '',
     status: '',
     stage: '',
     workType: '',
     settlement: '',
     sort: 'updated',
   });
+  const [keyword, setKeyword] = useState('');
+  const [debouncedKeyword, setDebouncedKeyword] = useState('');
 
   const loadAll = async () => {
     setLoading(true);
@@ -31,7 +32,7 @@ export function Board() {
         boardApi.get().catch(() => ({ notice: '', referenceVideos: [] })),
         (async () => {
           const q: Record<string, unknown> = {};
-          if (filters.keyword) q.keyword = filters.keyword;
+          if (debouncedKeyword) q.keyword = debouncedKeyword;
           if (filters.status) q.status = filters.status;
           if (filters.stage) q.stage = filters.stage;
           if (filters.workType) q.workType = filters.workType;
@@ -68,9 +69,14 @@ export function Board() {
   };
 
   useEffect(() => {
+    const t = setTimeout(() => setDebouncedKeyword(keyword), 300);
+    return () => clearTimeout(t);
+  }, [keyword]);
+
+  useEffect(() => {
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshView, favOnly, filters]);
+  }, [refreshView, favOnly, debouncedKeyword, filters]);
 
   const isAdmin = me?.role === 'admin';
 
@@ -151,8 +157,8 @@ export function Board() {
       <div className="toolbar">
         <Input
           placeholder="搜索标题/简介"
-          value={filters.keyword}
-          onChange={(e) => setFilters({ ...filters, keyword: e.target.value })}
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
           onKeyDown={(e) => {
             if ((e as KeyboardEvent<HTMLInputElement>).key === 'Enter') loadAll();
           }}

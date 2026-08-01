@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import { Button, Input, Select } from '@cloudflare/kumo';
 import { useApp } from '../app-context';
 import { seriesApi, topicApi, type TopicQuery } from '../api';
@@ -55,7 +56,7 @@ export function Market() {
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           onKeyDown={(e) => {
-            if ((e as React.KeyboardEvent).key === 'Enter') loadAll();
+            if ((e as KeyboardEvent<HTMLInputElement>).key === 'Enter') loadAll();
           }}
         />
         <Button size="sm" onClick={loadAll}>

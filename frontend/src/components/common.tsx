@@ -1,6 +1,7 @@
 import { Badge, Loader } from '@cloudflare/kumo';
 import { STAGE_LABELS, stageOrder, fmtTime, fmtMoney } from '../api';
 import type { Topic, TopicStatus } from '../types';
+import type { MouseEvent } from 'react';
 
 export { fmtTime, fmtMoney };
 
@@ -61,7 +62,7 @@ export function Loading({ label = '加载中…' }: { label?: string }) {
   );
 }
 
-export function FavStar({ on, onClick }: { on: boolean; onClick?: (e: React.MouseEvent) => void }) {
+export function FavStar({ on, onClick }: { on: boolean; onClick?: (e: MouseEvent<HTMLSpanElement>) => void }) {
   return (
     <span
       data-fav

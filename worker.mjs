@@ -503,6 +503,7 @@ async function handleApi(request, env) {
     if (action === 'settle' && method === 'POST') {
       if (!admin() || t.status !== 'finished') return json({ error: '无权限或状态错误' }, 403);
       const amt = Number(body.amount) || (PRICE[t.workType] ?? PRICE.full);
+      if (amt < 0) return json({ error: '结算金额不能为负数' }, 400);
       const settled = body.action === 'pay';
       const evidence = (Array.isArray(body.evidence) ? body.evidence : jget(t.settlementEvidence, [])).filter(u => /^\/uploads\//.test(u) || safeUrl(u)).slice(0, 20);
       await run(env.DB, 'UPDATE topics SET settlementAmount=?, settlementDetail=?, settlementEvidence=?, settlementStatus=?, settledAt=?, updatedAt=? WHERE id=?',

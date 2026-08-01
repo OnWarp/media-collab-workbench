@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { FormEvent } from 'react';
 import { Button, Input, Tabs } from '@cloudflare/kumo';
 import { useApp } from '../app-context';
 import { authApi } from '../api';
@@ -11,7 +12,7 @@ export function Login() {
   const [displayName, setDisplayName] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const submit = async (e?: React.FormEvent) => {
+  const submit = async (e?: FormEvent<HTMLFormElement>) => {
     e?.preventDefault();
     if (busy) return;
     setBusy(true);

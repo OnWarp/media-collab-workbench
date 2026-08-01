@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import { Button, Input, Select } from '@cloudflare/kumo';
 import { useApp } from '../app-context';
 import type { ViewId } from '../app-context';
@@ -153,7 +154,7 @@ export function Board() {
           value={filters.keyword}
           onChange={(e) => setFilters({ ...filters, keyword: e.target.value })}
           onKeyDown={(e) => {
-            if ((e as React.KeyboardEvent).key === 'Enter') loadAll();
+            if ((e as KeyboardEvent<HTMLInputElement>).key === 'Enter') loadAll();
           }}
         />
         <Select

@@ -15,7 +15,7 @@ function StatCard({ num, lbl }: { num: string | number; lbl: string }) {
 }
 
 export function Stats() {
-  const { me, toast } = useApp();
+  const { me, toast, refreshView } = useApp();
   const [mine, setMine] = useState<StatsMe | null>(null);
   const [admin, setAdmin] = useState<StatsAdmin | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,7 +31,7 @@ export function Stats() {
         setLoading(false);
       }
     })();
-  }, [me, toast]);
+  }, [me, toast, refreshView]);
 
   if (loading || !mine) return <Loading />;
 

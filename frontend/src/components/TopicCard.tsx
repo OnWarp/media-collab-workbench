@@ -5,7 +5,7 @@ import { useApp } from '../app-context';
 import { topicApi } from '../api';
 
 export function TopicCard({ t, onClick }: { t: Topic; onClick: () => void }) {
-  const { me, toast } = useApp();
+  const { me, toast, refreshView } = useApp();
   const faved = (t.favoritedBy || []).includes(me?.id ?? -1);
   return (
     <div className="card clickable" onClick={onClick}>
@@ -17,6 +17,8 @@ export function TopicCard({ t, onClick }: { t: Topic; onClick: () => void }) {
             try {
               const r = await topicApi.favorite(t.id);
               if (r.favorited) toast('已收藏');
+              else toast('已取消收藏');
+              refreshView();
             } catch {}
           }}
         />

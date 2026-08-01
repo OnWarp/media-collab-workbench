@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Badge, Button, Input, InputArea, Select } from '@cloudflare/kumo';
 import { useApp } from '../app-context';
 import { topicApi, uploadApi } from '../api';
@@ -85,7 +86,7 @@ export function TopicDetail({ id, onClose }: { id: number; onClose: () => void }
   const faved = (t.favoritedBy || []).includes(me?.id ?? -1);
 
   // ---- 操作按钮 ----
-  const actions: React.ReactNode[] = [];
+  const actions: ReactNode[] = [];
   if (t.recycled) {
     actions.push(
       <span key="r" className="tag recycled">

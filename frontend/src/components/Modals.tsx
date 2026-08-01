@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import { Button, Input, InputArea, Select } from '@cloudflare/kumo';
 import { useApp } from '../app-context';
 import {
@@ -185,7 +186,7 @@ function TopicFormBase({
             value={mediaInputValue}
             onChange={(e) => setMediaInputValue(e.target.value)}
             onKeyDown={(e) => {
-              if ((e as React.KeyboardEvent).key === 'Enter' && mediaInputValue.trim()) {
+              if ((e as KeyboardEvent<HTMLInputElement>).key === 'Enter' && mediaInputValue.trim()) {
                 setS({ ...s, media: [...s.media, { type: mediaType, url: mediaInputValue.trim() }] });
                 setMediaInputValue('');
               }

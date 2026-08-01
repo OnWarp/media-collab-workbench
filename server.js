@@ -11,11 +11,11 @@ const { URL } = require('url');
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
-const PUBLIC_DIR = path.join(__dirname, 'public');
+const PUBLIC_DIR = path.join(__dirname, 'frontend', 'dist');
 
 // ===================== 数据层 =====================
 let db = { users: [], topics: [], comments: [], materials: [], messages: [], logs: [], sessions: {}, weeklySettlements: [], announcements: [], messageRecycle: [] };
-const UPLOAD_DIR = path.join(PUBLIC_DIR, 'uploads');
+const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const idCounters = {};
 
 function loadDB() {
@@ -206,8 +206,8 @@ function readMultipart(req, contentType) {
     const boundary = '--' + (m[1] || m[2]).trim();
     const chunks = [];
     let size = 0;
-    const LIMIT = 25 * 1024 * 1024; // This in-memory parser is intentionally capped; use R2 streaming in Workers.
-    req.on('data', c => { size += c.length; if (size > LIMIT) { req.destroy(); reject(new Error('视频过大，上限 200MB')); } chunks.push(c); });
+    const LIMIT = 25 * 1024 * 1024; // 视频上限 25MB（内存缓冲安全限制）
+    req.on('data', c => { size += c.length; if (size > LIMIT) { req.destroy(); reject(new Error('视频过大，上限 25MB')); } chunks.push(c); });
     req.on('end', () => {
       try {
         const buf = Buffer.concat(chunks);
@@ -234,11 +234,43 @@ function readMultipart(req, contentType) {
     req.on('error', reject);
   });
 }
-const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.m4v': 'video/x-m4v',
+  '.avi': 'video/x-msvideo',
+  '.mkv': 'video/x-matroska',
+  '.ogg': 'video/ogg',
+  '.mpg': 'video/mpeg',
+  '.mpeg': 'video/mpeg'
+};
 function serveStatic(res, urlPath) {
   let rel = urlPath === '/' ? '/index.html' : urlPath;
   const filePath = path.join(PUBLIC_DIR, path.normalize(rel));
   if (!filePath.startsWith(PUBLIC_DIR)) { res.writeHead(403); return res.end('Forbidden'); }
+  fs.readFile(filePath, (err, buf) => {
+    if (err) { res.writeHead(404); return res.end('Not Found'); }
+    const ext = path.extname(filePath);
+    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    res.end(buf);
+  });
+}
+function serveUpload(res, urlPath) {
+  const rel = urlPath.replace(/^\/uploads\//, '');
+  const filePath = path.join(UPLOAD_DIR, path.normalize(rel));
+  if (!filePath.startsWith(UPLOAD_DIR)) { res.writeHead(403); return res.end('Forbidden'); }
   fs.readFile(filePath, (err, buf) => {
     if (err) { res.writeHead(404); return res.end('Not Found'); }
     const ext = path.extname(filePath);
@@ -341,6 +373,7 @@ async function handle(req, res) {
   const method = req.method;
 
   // ---- 静态资源 ----
+  if (method === 'GET' && p.startsWith('/uploads/')) return serveUpload(res, p);
   if (method === 'GET' && !p.startsWith('/api/')) return serveStatic(res, p);
 
   // ---- API ----
@@ -943,6 +976,7 @@ async function handle(req, res) {
       if (t.status !== 'finished') return json(res, 400, { error: '仅完结选题可结算' });
       const { amount, detail, action, evidence } = body; // action: 'save' | 'pay'
       const amt = (amount != null && amount !== '') ? (parseFloat(amount) || 0) : defaultAmount(t);
+      if (amt < 0) return json(res, 400, { error: '结算金额不能为负数' });
       t.settlementAmount = amt;
       if (detail) t.settlementDetail = detail;
       if (Array.isArray(evidence)) t.settlementEvidence = evidence.filter(Boolean);
@@ -1156,6 +1190,7 @@ function purgeMessageRecycle() {
   console.log(`🔔 消息回收站清理：${old.length} 条过期消息已永久删除`);
 }
 loadDB();
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 // Explicit bootstrap is safe for a first production start.  Do not set the
 // password again after the administrator has been created.
 if (db.users.length === 0 && process.env.BOOTSTRAP_ADMIN_USERNAME && process.env.BOOTSTRAP_ADMIN_PASSWORD) {

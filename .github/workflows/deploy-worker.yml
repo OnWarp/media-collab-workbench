@@ -164,11 +164,28 @@ jobs:
         id: d1repair
         run: |
           set +e
+          NEED_REPAIR=0
+          # 检查 users 表是否存在且可访问
           npx wrangler d1 execute "$D1_NAME" --remote --config wrangler.jsonc --command "SELECT 1 FROM users LIMIT 1" >/dev/null 2>&1
-          HEALTH=$?
+          USERS_HEALTH=$?
+          # 检查是否存在 admin 用户
+          ADMIN_EXISTS=0
+          if [ "$USERS_HEALTH" -eq 0 ]; then
+            npx wrangler d1 execute "$D1_NAME" --remote --config wrangler.jsonc --command "SELECT 1 FROM users WHERE role='admin' LIMIT 1" >/dev/null 2>&1
+            if [ $? -eq 0 ]; then ADMIN_EXISTS=1; fi
+          fi
           set -e
-          if [ "$HEALTH" -ne 0 ]; then
-            echo "::warning::D1 表结构异常，执行修复（删除并重建所有表）"
+
+          if [ "$USERS_HEALTH" -ne 0 ]; then
+            echo "::warning::users 表访问失败，需要修复"
+            NEED_REPAIR=1
+          elif [ "$ADMIN_EXISTS" -eq 0 ]; then
+            echo "::warning::D1 中没有管理员账户，需要修复"
+            NEED_REPAIR=1
+          fi
+
+          if [ "$NEED_REPAIR" -eq 1 ]; then
+            echo "::warning::执行 D1 表结构修复（删除并重建所有表）"
             npx wrangler d1 execute "$D1_NAME" --remote --config wrangler.jsonc --command "
               DROP TABLE IF EXISTS logs;
               DROP TABLE IF EXISTS messages;
@@ -185,7 +202,7 @@ jobs:
               npx wrangler d1 execute "$D1_NAME" --remote --config wrangler.jsonc --file="$f"
             done
           else
-            echo "D1 表结构正常，无需修复"
+            echo "D1 表结构和管理员均正常，无需修复"
           fi
           # 正常应用迁移（处理新迁移文件）
           npx wrangler d1 migrations apply "$D1_NAME" --remote --config wrangler.jsonc
